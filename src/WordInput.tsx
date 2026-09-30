@@ -30,7 +30,7 @@ const WordInput = ({ onSubmit, disabled, error, statusMessage }: Props) => {
                     aria-invalid={Boolean(error)}
                     aria-describedby={error ? "word-error" : undefined}
                 />
-                <kbd>ENTER</kbd>
+                <kbd>엔터</kbd>
             </label>
             <button className="submit-button" type="submit" disabled={disabled || !text.trim()}>
                 <span>단어 잇기</span><span className="submit-arrow" aria-hidden="true">↗</span>

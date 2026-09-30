@@ -20,9 +20,9 @@ const WordList = ({ words }: Props) => {
                 const nextWord = words[index + 1]
                 return (
                     <li className="word-entry" key={`${index}-${word}`}>
-                        <span className={`entry-player ${index % 2 === 1 ? "entry-player-ai" : ""}`}>{index % 2 === 0 ? "YOU" : "AI"}</span>
+                        <span className={`entry-player ${index % 2 === 1 ? "entry-player-ai" : ""}`}>{index % 2 === 0 ? "나" : "봇"}</span>
                         <span className="entry-word">{word}</span>
-                        <span className="entry-ending">{nextWord ? `${word[word.length - 1]} →` : "LAST"}</span>
+                        <span className="entry-ending">{nextWord ? `${word[word.length - 1]} →` : "최신"}</span>
                     </li>
                 )
             })}

@@ -28,7 +28,7 @@ const App = () => {
       const nextRemainingMs = Math.max(0, deadline - Date.now())
       setRemainingMs(nextRemainingMs)
       if (nextRemainingMs === 0) {
-        setError(currentPlayer === 0 ? "시간 초과! TAPIE AI가 이겼어요." : "시간 초과! TAPIE AI가 제시간에 답하지 못했어요.")
+        setError(currentPlayer === 0 ? "시간 초과! 봇이 이겼어요." : "시간 초과! 봇이 제시간에 답하지 못했어요.")
         setIsFinished(true)
       }
     }, 50)
@@ -45,7 +45,7 @@ const App = () => {
         .then((computerWord) => {
           if (isCancelled) return
           if (!computerWord) {
-            setError("TAPIE AI가 이어갈 단어를 찾지 못했어요.")
+            setError("봇이 이어갈 단어를 찾지 못했어요.")
             setIsFinished(true)
             return
           }
@@ -118,7 +118,7 @@ const App = () => {
           <img className="brand-mark" src={logo} alt="" />
           <span className="brand-name">테이피 끝말잇기</span>
         </a>
-        <div className="header-meta"><span className="live-dot" />{mode === "timeAttack" ? "타임어택" : "단어 데스매치"} <span className="meta-divider">/</span> VS TAPIE AI</div>
+        <div className="header-meta"><span className="live-dot" />{mode === "timeAttack" ? "타임어택" : "단어 데스매치"} <span className="meta-divider">/</span> 상대 봇</div>
       </header>
 
       <main id="top">
@@ -127,7 +127,7 @@ const App = () => {
             <p className="eyebrow">테이피 끝말잇기 <span>·</span></p>
             <h1 id="page-title">안녕하세요끝말잇기입니다<br /><span>잘부탁드립니다.</span></h1>
           </div>
-          <p className="intro-note">한 단어씩 이어가는<br />테이피봇과의 우리말 대결.</p>
+          <p className="intro-note">한 단어씩 이어가는<br />테이피 봇과의 우리말 대결.</p>
         </section>
 
         <div className="game-layout">
@@ -146,7 +146,7 @@ const App = () => {
               {[0, 1].map((player) => (
                 <div className={`player ${!isFinished && currentPlayer === player ? "player-active" : ""} ${isFinished && 1 - currentPlayer === player ? "player-winner" : ""}`} key={player}>
                   <span className="player-index">0{player + 1}</span>
-                  <span className="player-name">{player === 0 ? "YOU" : "TAPIE AI"}</span>
+                  <span className="player-name">{player === 0 ? "나" : "봇"}</span>
                   <span className="player-score">{words.filter((_, index) => index % 2 === player).length}</span>
                 </div>
               ))}
@@ -154,8 +154,8 @@ const App = () => {
 
             <div className={`turn-board ${isFinished ? "turn-board-finished" : ""} ${isComputerTurn ? "turn-board-ai" : ""} ${mode === "timeAttack" && remainingMs < 1000 && !isFinished ? "turn-board-urgent" : ""}`} aria-live="polite">
               <div className="turn-board-top">
-                <span>{isFinished ? "MATCH COMPLETE" : currentPlayer === 0 ? "YOUR TURN · PLAYER 01" : "TAPIE AI · THINKING"}</span>
-                <span>{mode === "timeAttack" && !isFinished ? `${(remainingMs / 1000).toFixed(1)}s` : `ROUND ${String(words.length + 1).padStart(2, "0")}`}</span>
+                <span>{isFinished ? "경기 종료" : currentPlayer === 0 ? "내 차례 · 1P" : "봇 생각 중"}</span>
+                <span>{mode === "timeAttack" && !isFinished ? `${(remainingMs / 1000).toFixed(1)}초` : `차례 ${String(words.length + 1).padStart(2, "0")}`}</span>
               </div>
               {mode === "timeAttack" && !isFinished && (
                 <div
@@ -174,8 +174,8 @@ const App = () => {
               {!isFinished && <div className="beat-lane" aria-hidden="true">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>}
               {isFinished ? (
                 <div className="result-message">
-                  <span className="result-label">WINNER</span>
-                  <strong>{currentPlayer === 0 ? "태이피" : "나"}</strong>
+                  <span className="result-label">승자</span>
+                  <strong>{currentPlayer === 0 ? "봇" : "나"}</strong>
                   <span className="result-caption">{error || "기권으로 게임이 종료됐어요."}</span>
                 </div>
               ) : (
@@ -194,7 +194,7 @@ const App = () => {
               onSubmit={handleSubmit}
               disabled={isFinished || isComputerTurn}
               error={error}
-              statusMessage={isComputerTurn ? "TAPIE AI가 단어를 고르고 있어요." : "단어를 입력하고 차례를 이어가세요."}
+              statusMessage={isComputerTurn ? "봇이 단어를 고르고 있어요." : "단어를 입력하고 차례를 이어가세요."}
             />
 
             <div className="play-actions">
@@ -205,33 +205,33 @@ const App = () => {
 
           <aside className="history-column" aria-label="단어 기록">
             <div className="section-heading history-heading">
-              <div><span className="section-kicker">WORD BY WORD</span><h2>이어진 단어</h2></div>
+              <div><span className="section-kicker">단어 기록</span><h2>이어진 단어</h2></div>
               <span className="word-count">{String(words.length).padStart(2, "0")}</span>
             </div>
             <WordList words={words} />
-            <div className="history-footer"><span>CHAIN STATUS</span><span>{words.length ? "IN PLAY" : "READY"}<i /></span></div>
+            <div className="history-footer"><span>진행 상태</span><span>{words.length ? "진행 중" : "대기"}<i /></span></div>
           </aside>
         </div>
       </main>
 
-      <footer className="site-footer"><span>TAPIE WORD CLUB <b>·</b> WORD BEAT 01</span><span>이어갈 단어를 입력해 리듬을 이어가세요.</span></footer>
+      <footer className="site-footer"><span>테이피 끝말잇기 <b>·</b> 01</span><span>이어갈 단어를 입력해 리듬을 이어가세요.</span></footer>
       {isModeDialogOpen && (
         <div className="mode-overlay">
           <section className="mode-dialog" role="dialog" aria-modal="true" aria-labelledby="mode-title">
-            <span className="mode-kicker">TAPIE WORD CLUB · GAME SELECT</span>
+            <span className="mode-kicker">테이피 끝말잇기 · 모드 선택</span>
             <h2 id="mode-title">어떤 모드로<br />이어볼까요?</h2>
             <p className="mode-intro">플레이 모드를 선택하면 바로 시작해요.</p>
             <div className="mode-options">
               <button className="mode-option" type="button" onClick={() => startNewGame("deathmatch")}>
-                <span className="mode-number">MODE 01</span>
+                <span className="mode-number">모드 01</span>
                 <strong>단어 데스매치</strong>
                 <span>차례를 이어가며 상대가 막힐 때까지 대결</span>
                 <b aria-hidden="true">↗</b>
               </button>
               <button className="mode-option mode-option-time" type="button" onClick={() => startNewGame("timeAttack")}>
-                <span className="mode-number">MODE 02 · 3 SEC</span>
+                <span className="mode-number">모드 02 · 3초 제한</span>
                 <strong>타임어택</strong>
-                <span>나와 AI 모두 차례마다 3초 안에 입력</span>
+                <span>나와 봇 모두 차례마다 3초 안에 입력</span>
                 <b aria-hidden="true">↗</b>
               </button>
             </div>
