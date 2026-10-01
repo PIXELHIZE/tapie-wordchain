@@ -8,6 +8,6 @@ The supplemental Korean noun list in `kkutu_words.txt` was derived from
 
 KKuTu is distributed under the GNU General Public License version 3. A copy of
 that license is included in `KKUTU_LICENSE`. The generated list retains only
-Hangul-only modern noun entries and excludes entries marked as spaced words,
+modern Hangul noun entries of at least two syllables and excludes entries marked as spaced words,
 dialects, archaic words, or North Korean vocabulary. Words marked as North
 Korean vocabulary by KKuTu are also removed from the pre-existing dictionary.

@@ -1,7 +1,7 @@
 # KKuTu Korean noun supplement
 # Source: https://github.com/JJoriping/KKuTu
 # Source commit: a2c240bc31fe2dea31d26fb1cf7625b4645556a6
-# Filters: Hangul-only noun(type 1), excluding spaced/dialect/archaic/North-Korean flags
+# Filters: 2+ syllable Hangul noun(type 1), excluding spaced/dialect/archaic/North-Korean flags
 가가대소
 가가례
 가가문전

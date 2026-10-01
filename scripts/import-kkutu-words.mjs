@@ -15,7 +15,7 @@ const localNorthKoreanWords = new Set()
 for (const [, , word, part] of localSql.matchAll(localPattern)) {
   const normalizedWord = word.normalize("NFC")
   if (part === "북한어") localNorthKoreanWords.add(normalizedWord)
-  if (part === "명사" && /^[가-힣]+$/u.test(normalizedWord)) localWords.add(normalizedWord)
+  if (part === "명사" && /^[가-힣]{2,}$/u.test(normalizedWord)) localWords.add(normalizedWord)
 }
 for (const word of localNorthKoreanWords) localWords.delete(word)
 
@@ -41,9 +41,9 @@ for (const row of sourceSql.slice(dataStart, dataEnd).split("\n")) {
   const word = rawWord.normalize("NFC")
   const flag = Number(rawFlag)
   const isNoun = /(^|,)1(,|$)/.test(type)
-  if (Number.isInteger(flag) && (flag & 32) !== 0 && /^[가-힣]+$/u.test(word)) northKoreanWords.add(word)
+  if (Number.isInteger(flag) && (flag & 32) !== 0 && /^[가-힣]{2,}$/u.test(word)) northKoreanWords.add(word)
   const hasExcludedFlag = !Number.isInteger(flag) || (flag & (4 | 8 | 16 | 32)) !== 0
-  if (!isNoun || hasExcludedFlag || !/^[가-힣]+$/u.test(word)) continue
+  if (!isNoun || hasExcludedFlag || !/^[가-힣]{2,}$/u.test(word)) continue
 
   eligibleRows += 1
   if (!localWords.has(word)) importedWords.add(word)
@@ -54,7 +54,7 @@ const header = [
   "# KKuTu Korean noun supplement",
   "# Source: https://github.com/JJoriping/KKuTu",
   "# Source commit: a2c240bc31fe2dea31d26fb1cf7625b4645556a6",
-  "# Filters: Hangul-only noun(type 1), excluding spaced/dialect/archaic/North-Korean flags",
+  "# Filters: 2+ syllable Hangul noun(type 1), excluding spaced/dialect/archaic/North-Korean flags",
 ]
 writeFileSync(targetPath, `${header.join("\n")}\n${words.join("\n")}\n`)
 writeFileSync(exclusionPath, `${[...northKoreanWords].sort((a, b) => a.localeCompare(b, "ko")).join("\n")}\n`)

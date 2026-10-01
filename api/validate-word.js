@@ -8,11 +8,10 @@ export default function handler(request, response) {
   }
 
   const word = request.body?.word
-  if (typeof word !== "string" || !/^[가-힣]+$/u.test(word.normalize("NFC"))) {
-    response.status(400).json({ error: "word must contain Korean syllables only" })
+  if (typeof word !== "string" || !/^[가-힣]{2,}$/u.test(word.normalize("NFC"))) {
+    response.status(400).json({ error: "word must contain at least two Korean syllables" })
     return
   }
 
   response.status(200).json({ valid: dictionaryWords.has(word.normalize("NFC")) })
 }
-

@@ -52,13 +52,13 @@ const loadWordIndex = () => {
     const word = decodeSqlString(rawWord).normalize("NFC")
     const part = decodeSqlString(rawPart)
     if (part === "북한어") northKoreanWords.add(word)
-    if (part === "명사" && /^[가-힣]+$/u.test(word)) nounWords.add(word)
+    if (part === "명사" && /^[가-힣]{2,}$/u.test(word)) nounWords.add(word)
   }
 
   const words = new Set([...nounWords].filter((word) => !northKoreanWords.has(word)))
   const kkutuWords = readFileSync(kkutuWordsPath, "utf8")
     .split(/\r?\n/u)
-    .filter((word) => word && !word.startsWith("#"))
+    .filter((word) => /^[가-힣]{2,}$/u.test(word))
   for (const word of kkutuWords) words.add(word.normalize("NFC"))
   const kkutuExcludedWords = readFileSync(kkutuExcludedWordsPath, "utf8").split(/\r?\n/u).filter(Boolean)
   for (const word of kkutuExcludedWords) words.delete(word.normalize("NFC"))

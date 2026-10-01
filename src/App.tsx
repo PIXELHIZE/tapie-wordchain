@@ -206,7 +206,7 @@ const App = () => {
             </div>
             <section className="home-rules" aria-labelledby="rules-title">
               <h2 id="rules-title">플레이 방법</h2>
-              <p><span>01</span> 한 글자 이상의 한글 단어를 입력해요.</p>
+              <p><span>01</span> 두 글자 이상의 한글 단어를 입력해요.</p>
               <p><span>02</span> 앞 단어의 마지막 글자로 다음 단어를 시작해요.</p>
               <p><span>03</span> 이미 나온 단어는 다시 사용할 수 없어요.</p>
             </section>
@@ -288,7 +288,7 @@ const App = () => {
             )}
 
             <div className="play-actions">
-              <p className="rule-note"><span className="rule-mark">!</span> 한 글자 이상의 한글 단어 · 이미 나온 단어는 사용할 수 없어요</p>
+              <p className="rule-note"><span className="rule-mark">!</span> 두 글자 이상의 한글 단어 · 이미 나온 단어는 사용할 수 없어요</p>
               <div className="play-action-buttons">
                 <button className="read-word-button" type="button" onClick={readLastWord} disabled={!lastWord} aria-describedby="speech-status">
                   단어 읽기 <span aria-hidden="true">◖)</span>

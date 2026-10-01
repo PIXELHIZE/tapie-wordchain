@@ -110,8 +110,8 @@ const server = createServer(async (request, response) => {
 
     try {
       const { word } = await readJsonBody(request)
-      if (typeof word !== "string" || !/^[가-힣]+$/u.test(word.normalize("NFC"))) {
-        json(response, 400, { error: "word must contain Korean syllables only" })
+      if (typeof word !== "string" || !/^[가-힣]{2,}$/u.test(word.normalize("NFC"))) {
+        json(response, 400, { error: "word must contain at least two Korean syllables" })
         return
       }
       json(response, 200, { valid: dictionaryWords.has(word.normalize("NFC")) })
