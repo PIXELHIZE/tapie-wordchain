@@ -11,7 +11,7 @@ const fixtureWords = ["사과", "과쁨", "과일", "일기", "기차", "차표"
 const engine = createWordEngine(fixtureWords, () => 0)
 const migration = ["0001_game_rankings.sql", "0002_scoring.sql", "0003_registration_contacts.sql"].map((file) => readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8")).join("\n")
 
-const harness = () => {
+const harness = (replayEngine?: (version: number) => ReturnType<typeof createWordEngine>) => {
   const sqlite = new DatabaseSync(":memory:")
   sqlite.exec(migration)
   const prepare = (sql: string, params: SQLInputValue[] = []) => ({
@@ -22,7 +22,7 @@ const harness = () => {
   })
   const env = { DB: { prepare } as unknown as D1Database, ASSETS: { fetch: async () => new Response("asset") } as unknown as Fetcher } satisfies Env
   let clock = 0
-  const api = createApi(engine, () => clock)
+  const api = createApi(engine, () => clock, replayEngine)
   const send = async (path: string, body?: unknown) => {
     if (body && typeof body === "object" && "nickname" in body) body = { phone: "010-0000-0000", ...body }
     const response = await api(new Request(`https://game.test/api/${path}`, {
@@ -230,6 +230,21 @@ test("offline ranking rejects a forged timeout and invalid transcript", async ()
     assert.equal((await app.send("local-ranking", { nickname: "잘못된기록", transcript })).status, 400)
   }
   assert.equal((await app.send("rankings")).body.rankings.length, 0)
+})
+
+test("old and expanded dictionary records are registered using their original engine", async () => {
+  const { createLocalRun, submitLocalWord, finishLocalRun, getTranscript } = await import("../shared/run.ts")
+  const expanded = createWordEngine([...fixtureWords, "과자", "자기"])
+  const app = harness((version) => version === 2 ? engine : expanded)
+  for (const version of [2, 3]) {
+    const selected = version === 2 ? engine : expanded
+    let run = createLocalRun(crypto.randomUUID(), 0, version)
+    run = submitLocalWord(run, "과자", 1000, selected).run
+    run = finishLocalRun(run, "forfeit", 1000)
+    const response = await app.send("local-ranking", { nickname: `사전${version}`, transcript: getTranscript(run) })
+    assert.equal(response.status, 200)
+    assert.equal(response.body.entry.score, version === 2 ? 0 : 130)
+  }
 })
 
 test("phone numbers are required, normalized, private, and immutable on replay", async () => {

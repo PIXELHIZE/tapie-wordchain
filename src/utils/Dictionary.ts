@@ -1,5 +1,4 @@
 type DictionaryCache = Pick<Cache, "match" | "put" | "delete">
-const path = "/dictionary.json"
 
 const readDictionary = async (response: Response): Promise<string[]> => {
   if (!response.ok) throw new Error("사전 파일을 불러오지 못했어요. 다시 준비해 주세요.")
@@ -9,7 +8,7 @@ const readDictionary = async (response: Response): Promise<string[]> => {
   return words as string[]
 }
 
-export const loadDictionary = async (fetchDictionary: () => Promise<Response>, cache?: DictionaryCache): Promise<string[]> => {
+export const loadDictionary = async (fetchDictionary: () => Promise<Response>, cache?: DictionaryCache, path = "/dictionary.json"): Promise<string[]> => {
   let cached: Response | undefined
   try { cached = await cache?.match(path) } catch { /* A cache read must not block downloading. */ }
   if (cached) {

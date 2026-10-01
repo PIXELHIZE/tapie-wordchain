@@ -75,10 +75,21 @@ npm run deploy
 
 ## 단어 데이터와 API
 
-빌드 시 `korean_kr.sql`, `kkutu_words.txt`, `kkutu_excluded_words.txt`에서 `worker/generated/words.json`과 `public/dictionary.json`을 생성합니다. 출처·라이선스는 `THIRD_PARTY_NOTICES.md`에 있습니다. Worker는 런타임에서 파일시스템이나 MySQL을 사용하지 않습니다.
+사전은 **402,553개**입니다. 기존 221,796개에 끄투 공개 데이터의 게임·포켓몬·노래·영화·문학 등 인정 주제어 45,115개와 Open Korean Text의 일반 명사·고유명사·위키 제목 명사 135,643개를 추가하고, 기존 목록에 잘못 재포함된 북한어 1개도 제거했습니다. 중복과 북한어를 제외하고 NFC 한글 2~100자만 포함합니다. 등록된 단어라도 다음 단어를 이을 수 없으면 기존 한방 단어 규칙으로 거절합니다.
+
+빌드 시 `korean_kr.sql`, `kkutu_words.txt`, `kkutu_excluded_words.txt`, `kkutu_extended_words.txt`, `open_korean_words.txt`에서 `worker/generated/words.json`과 `public/dictionary-v3.json`을 생성합니다. `public/dictionary.json`은 기존 앱의 사전으로 유지합니다. 출처·라이선스는 `THIRD_PARTY_NOTICES.md`, 원본 주소·SHA-256·단어 수는 `dictionary-sources.json`에 있습니다. Worker는 런타임에서 파일시스템이나 MySQL을 사용하지 않습니다.
+
+```sh
+# 고정된 공개 원본에서 보강 목록 재생성 (인터넷 필요)
+npm run dictionary:update
+# 다운로드한 KKuTu SQL을 사용할 수도 있습니다.
+npm run dictionary:update -- /path/to/KKuTu/db.sql
+```
+
+일반 개발·빌드는 Git에 포함된 목록만 사용하므로 사전 원본 사이트에 접속하지 않습니다. 끄투 원본의 공개 인정 주제를 따르며 비공개 끄투코리아 실시간 사전과의 완전 일치를 의미하지 않습니다.
 
 - `POST /api/local-ranking`: 종료된 로컬 경기 기록을 재검증하고 닉네임·전화번호로 등록
 - `GET /api/rankings`: 전체 상위 20개
 - 기존 서버 세션 API(`/api/games`, `/api/games/:id`, `words`, `finish`, `ranking`)도 유지합니다. 점수·감점은 같은 규칙이고 차례 번호를 조건으로 갱신해 중복 요청을 막습니다.
 
-공유 규칙 버전은 `shared/run.ts`의 `RULES_VERSION`입니다. 사전·규칙을 바꿀 때는 로컬 사전 캐시 버전도 함께 갱신해야 합니다. Service Worker는 빌드 콘텐츠별 캐시를 사용하고 업데이트 시 바로 전 버전의 화면도 한 세대 보존합니다.
+공유 규칙·사전 버전은 `shared/dictionary-version.ts`에 있습니다. 새 게임은 버전 3을 사용하고, 기존 진행 경기·미전송 기록은 버전 2 사전으로 복구·재검증해 봇 응답과 점수가 바뀌지 않습니다. 기존 사전 순서의 해시와 확장 사전의 앞부분 일치를 테스트로 고정합니다. 사전 URL과 기기 캐시도 버전별로 분리하고 Service Worker에 두 버전 모두 포함합니다. Service Worker는 빌드 콘텐츠별 캐시를 사용하고 업데이트 시 바로 전 버전의 화면도 한 세대 보존합니다.

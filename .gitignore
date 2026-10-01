@@ -28,3 +28,4 @@ dist-ssr
 .dev.vars*
 worker/generated/
 public/dictionary.json
+public/dictionary-v*.json

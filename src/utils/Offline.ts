@@ -4,15 +4,15 @@ import type { RankingEntry, RankingResult } from "../../shared/game.ts"
 import { synchronizeRecords, type SavedRecord, type QueueStore } from "./SyncQueue.ts"
 import { loadDictionary } from "./Dictionary.ts"
 import { normalizePhone } from "../../shared/contact.ts"
+import { dictionaryPath, DICTIONARY_VERSION } from "../../shared/dictionary-version.ts"
 
-const DICTIONARY_CACHE = "tapie-dictionary-v2"
 const RUN_KEY = "wordchain-run-v2"
 const RANK_KEY = "wordchain-rankings-v2"
 const MODE_KEY = "wordchain-local-mode"
 let manual = false
 let connected = true
 let syncing: Promise<void> | null = null
-let enginePromise: Promise<WordEngine> | null = null
+const enginePromises = new Map<number, Promise<WordEngine>>()
 const changed = () => window.dispatchEvent(new Event("wordchain-sync"))
 try { manual = localStorage.getItem(MODE_KEY) === "true" } catch { /* Optional preference. */ }
 
@@ -58,12 +58,19 @@ const records: QueueStore = {
   }),
 }
 
-export const loadLocalEngine = () => enginePromise ??= (async () => {
-  let cache: Cache | undefined
-  try { cache = await caches.open(DICTIONARY_CACHE) } catch { /* In-memory mode still works. */ }
-  const words = await loadDictionary(() => fetch("/dictionary.json", { signal: AbortSignal.timeout(30000), cache: "no-cache" }), cache)
-  return createWordEngine(words)
-})().catch((error) => { enginePromise = null; throw error })
+export const loadLocalEngine = (version = DICTIONARY_VERSION) => {
+  const existing = enginePromises.get(version)
+  if (existing) return existing
+  const path = dictionaryPath(version)
+  const promise = (async () => {
+    let cache: Cache | undefined
+    try { cache = await caches.open(`tapie-dictionary-v${version}`) } catch { /* In-memory mode still works. */ }
+    const words = await loadDictionary(() => fetch(path, { signal: AbortSignal.timeout(30000), cache: "no-cache" }), cache, path)
+    return createWordEngine(words)
+  })().catch((error) => { enginePromises.delete(version); throw error })
+  enginePromises.set(version, promise)
+  return promise
+}
 
 class RankingFailure extends Error {
   status: number

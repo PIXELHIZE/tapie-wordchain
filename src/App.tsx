@@ -4,7 +4,7 @@ import WordList from "./WordList"
 import RankingList from "./RankingList"
 import ResultScreen from "./ResultScreen"
 import { getTurnDurationMs, getWordPoints, type RankingEntry } from "../shared/game"
-import { createLocalRun, finishLocalRun, submitLocalWord, type LocalRun } from "../shared/run"
+import { createLocalRun, finishLocalRun, submitLocalWord, runVersion, RULES_VERSION, type LocalRun } from "../shared/run"
 import { getAllowedInitials } from "./utils/WordChain"
 import { connectionState, loadLocalEngine, persistRun, prepareOfflineShell, queueRanking, registrationFor, restoreRun, setLocalMode, syncRankings } from "./utils/Offline"
 import type { WordEngine } from "../worker/engine"
@@ -25,6 +25,7 @@ const App = () => {
   const [phone, setPhone] = useState("")
   const rulesRef = useRef<HTMLDialogElement>(null)
   const engineRef = useRef<WordEngine | null>(null)
+  const engineVersionRef = useRef<number | null>(null)
   const runRef = useRef(run)
   const generation = useRef(0)
   const data = run?.game
@@ -40,7 +41,9 @@ const App = () => {
 
   useEffect(() => {
     let cancelled = false
-    void loadLocalEngine().then((engine) => { if (!cancelled) { engineRef.current = engine; setReady(true) } }).catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "사전 준비에 실패했어요. 다시 준비해 주세요.") }).finally(() => { if (!cancelled) setDictionaryLoading(false) })
+    const version = runVersion(runRef.current)
+    const initialGeneration = generation.current
+    void loadLocalEngine(version).then((engine) => { if (!cancelled && generation.current === initialGeneration) { engineRef.current = engine; engineVersionRef.current = version; setReady(true) } }).catch((cause) => { if (!cancelled && generation.current === initialGeneration) setError(cause instanceof Error ? cause.message : "사전 준비에 실패했어요. 다시 준비해 주세요.") }).finally(() => { if (!cancelled) setDictionaryLoading(false) })
     void prepareOfflineShell().then((saved) => { if (!cancelled) setOfflineReady(saved) }).catch(() => { /* The dictionary still supports this open page offline. */ })
     const update = () => setConnection(connectionState())
     const reconnect = () => { void syncRankings() }
@@ -73,9 +76,13 @@ const App = () => {
   const startGame = async () => {
     reset()
     const current = generation.current
-    if (!engineRef.current) {
+    if (!engineRef.current || engineVersionRef.current !== RULES_VERSION) {
       setPending(true)
-      try { engineRef.current = await loadLocalEngine(); setReady(true) }
+      try {
+        const engine = await loadLocalEngine()
+        if (current !== generation.current) return
+        engineRef.current = engine; engineVersionRef.current = RULES_VERSION; setReady(true)
+      }
       catch (cause) { if (current === generation.current) setError(cause instanceof Error ? cause.message : "사전 준비에 실패했어요. 다시 준비해 주세요."); return }
       finally { if (current === generation.current) setPending(false) }
     }

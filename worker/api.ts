@@ -21,7 +21,7 @@ const readBody = async (request: Request): Promise<Record<string, unknown>> => {
   return body as Record<string, unknown>
 }
 
-export const createApi = (engine: WordEngine, now: () => number = Date.now) => {
+export const createApi = (engine: WordEngine, now: () => number = Date.now, replayEngine: (version: number) => WordEngine = () => engine) => {
   const getGame = (db: D1Database, id: string) => db.prepare(gameSelect).bind(id).first<GameRow>()
   const finish = async (db: D1Database, game: GameRow, reason: "timeout" | "forfeit") => {
     await db.prepare("UPDATE games SET status = 'finished', reason = ? WHERE id = ? AND status = 'active' AND revision = ?").bind(reason, game.id, game.revision).run()
@@ -54,7 +54,7 @@ export const createApi = (engine: WordEngine, now: () => number = Date.now) => {
       if (request.method === "POST" && path === "/api/local-ranking") {
         const body = await readBody(request)
         let run
-        try { run = replayTranscript(body.transcript, engine) } catch { return json({ error: "경기 기록을 확인해 주세요." }, 400) }
+        try { run = replayTranscript(body.transcript, replayEngine) } catch { return json({ error: "경기 기록을 확인해 주세요." }, 400) }
         const game = run.game
         await env.DB.prepare("INSERT INTO games (id, words, score, revision, streak, mistakes, last_gain, deadline, status, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'finished', ?, ?) ON CONFLICT(id) DO NOTHING").bind(game.id, JSON.stringify(game.words), game.score, game.revision, game.streak, game.mistakes, game.lastGain, game.reason, receivedAt).run()
         return register(env.DB, game.id, body.nickname, body.phone)

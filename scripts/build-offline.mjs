@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { createServiceWorker } from "./service-worker.mjs"
 
 const root = new URL("../dist/client/", import.meta.url)
-const assets = ["/", "/index.html", "/favicon.svg", "/dictionary.json", ...(await readdir(new URL("assets/", root))).map((file) => `/assets/${file}`)]
+const assets = ["/", "/index.html", "/favicon.svg", "/dictionary.json", "/dictionary-v3.json", ...(await readdir(new URL("assets/", root))).map((file) => `/assets/${file}`)]
 const digest = createHash("sha256")
 for (const path of assets.filter((path) => path !== "/")) digest.update(await readFile(new URL(path.slice(1), root)))
 digest.update(await readFile(new URL(import.meta.url)))
