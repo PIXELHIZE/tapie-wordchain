@@ -6,6 +6,13 @@ import { createServer as createViteServer } from "vite"
 const projectRoot = process.cwd()
 const sqlPath = resolve(projectRoot, "korean_kr.sql")
 const wordPattern = /\((\d+),\s*'((?:\\.|''|[^'\\])*)',\s*'((?:\\.|''|[^'\\])*)'\)/g
+const HANGUL_BASE = 0xac00
+const HANGUL_END = 0xd7a3
+const SYLLABLES_PER_INITIAL = 21 * 28
+const NIEUN_INDEX = 2
+const RIEUL_INDEX = 5
+const IEUNG_INDEX = 11
+const NIEUN_TO_IEUNG_VOWELS = new Set([3, 6, 7, 12, 17, 20])
 
 const decodeSqlString = (value) => value
   .replace(/''/g, "'")
@@ -14,15 +21,42 @@ const decodeSqlString = (value) => value
     "\\": "\\", "'": "'", '"': '"', "%": "%", _: "_",
   })[escaped])
 
+const replaceInitial = (syllable, initialIndex) => {
+  const syllableIndex = syllable.charCodeAt(0) - HANGUL_BASE
+  return String.fromCharCode(HANGUL_BASE + initialIndex * SYLLABLES_PER_INITIAL + syllableIndex % SYLLABLES_PER_INITIAL)
+}
+
+const getAllowedInitials = (syllable) => {
+  const code = syllable.charCodeAt(0)
+  if (code < HANGUL_BASE || code > HANGUL_END) return [syllable]
+
+  const syllableIndex = code - HANGUL_BASE
+  const initialIndex = Math.floor(syllableIndex / SYLLABLES_PER_INITIAL)
+  const vowelIndex = Math.floor((syllableIndex % SYLLABLES_PER_INITIAL) / 28)
+  const allowed = [syllable]
+
+  if (initialIndex === RIEUL_INDEX) {
+    allowed.push(replaceInitial(syllable, NIEUN_INDEX), replaceInitial(syllable, IEUNG_INDEX))
+  } else if (initialIndex === NIEUN_INDEX && NIEUN_TO_IEUNG_VOWELS.has(vowelIndex)) {
+    allowed.push(replaceInitial(syllable, IEUNG_INDEX))
+  }
+
+  return [...new Set(allowed)]
+}
+
 const loadWordIndex = () => {
   const sql = readFileSync(sqlPath, "utf8")
-  const words = new Set()
+  const nounWords = new Set()
+  const northKoreanWords = new Set()
 
   for (const [, , rawWord, rawPart] of sql.matchAll(wordPattern)) {
     const word = decodeSqlString(rawWord).normalize("NFC")
     const part = decodeSqlString(rawPart)
-    if (part === "명사" && /^[가-힣]{2,}$/u.test(word)) words.add(word)
+    if (part === "북한어") northKoreanWords.add(word)
+    if (part === "명사" && /^[가-힣]+$/u.test(word)) nounWords.add(word)
   }
+
+  const words = new Set([...nounWords].filter((word) => !northKoreanWords.has(word)))
 
   const index = new Map()
   for (const word of words) {
@@ -32,10 +66,10 @@ const loadWordIndex = () => {
     index.set(initial, bucket)
   }
 
-  return { index, wordCount: words.size }
+  return { index, words, wordCount: words.size }
 }
 
-const { index: wordsByInitial, wordCount } = loadWordIndex()
+const { index: wordsByInitial, words: dictionaryWords, wordCount } = loadWordIndex()
 const json = (response, statusCode, body) => {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" })
   response.end(JSON.stringify(body))
@@ -59,7 +93,15 @@ const readJsonBody = (request) => new Promise((resolveBody, reject) => {
 })
 
 const serveStaticFile = (request, response) => {
-  const pathname = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname)
+  let pathname
+  try {
+    pathname = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname)
+  } catch {
+    response.writeHead(400, { "content-type": "text/plain; charset=utf-8" })
+    response.end("Bad request")
+    return
+  }
+
   const distRoot = resolve(projectRoot, "dist")
   const requestedFile = resolve(distRoot, `.${pathname}`)
   const safeFile = requestedFile === distRoot || requestedFile.startsWith(`${distRoot}${sep}`)
@@ -76,11 +118,14 @@ const serveStaticFile = (request, response) => {
   }
 
   try {
+    const content = readFileSync(filePath)
     response.writeHead(200, { "content-type": mimeTypes[extname(filePath)] ?? "application/octet-stream" })
-    response.end(readFileSync(filePath))
+    response.end(request.method === "HEAD" ? undefined : content)
   } catch {
-    response.writeHead(404)
-    response.end("Not found")
+    if (!response.headersSent) {
+      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" })
+      response.end("Not found")
+    }
   }
 }
 
@@ -109,11 +154,32 @@ const server = createServer(async (request, response) => {
       }
 
       const initial = typeof previousWord === "string" ? [...previousWord.normalize("NFC")].at(-1) : undefined
-      const candidates = initial ? wordsByInitial.get(initial) ?? [] : [...wordsByInitial.values()].flat()
+      const candidates = initial
+        ? getAllowedInitials(initial).flatMap((allowedInitial) => wordsByInitial.get(allowedInitial) ?? [])
+        : [...wordsByInitial.values()].flat()
       const used = new Set(usedWords.map((word) => word.normalize("NFC")))
       const available = candidates.filter((word) => !used.has(word))
       const word = available.length ? available[Math.floor(Math.random() * available.length)] : null
       json(response, 200, { word })
+    } catch {
+      json(response, 400, { error: "Invalid word request" })
+    }
+    return
+  }
+
+  if (pathname === "/api/validate-word") {
+    if (request.method !== "POST") {
+      json(response, 405, { error: "Method not allowed" })
+      return
+    }
+
+    try {
+      const { word } = await readJsonBody(request)
+      if (typeof word !== "string" || !/^[가-힣]+$/u.test(word.normalize("NFC"))) {
+        json(response, 400, { error: "word must contain Korean syllables only" })
+        return
+      }
+      json(response, 200, { valid: dictionaryWords.has(word.normalize("NFC")) })
     } catch {
       json(response, 400, { error: "Invalid word request" })
     }

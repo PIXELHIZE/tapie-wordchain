@@ -98,12 +98,21 @@ main { flex: 1; }
 .submit-arrow { font-size: 17px; }
 .input-message { grid-column: 1 / -1; min-height: 22px; margin: 7px 0 0; color: #898982; font-size: 11px; }
 .input-error { color: #ba3d34; }
+.word-error-banner { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; margin-bottom: 10px; padding: 14px 16px; border: 2px solid var(--ink); border-radius: 10px; background: var(--coral); color: #fff; box-shadow: 4px 4px 0 var(--ink); animation: error-pop .22s ease-out both; }
+.word-error-banner > span:last-child { display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 1.45; }
+.word-error-banner strong { font-size: 15px; }
+.word-error-icon { width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 50%; background: #fff; color: var(--ink); font-weight: 900; }
+.word-form-error .word-input-wrap { border-color: #9d3029; box-shadow: 0 0 0 3px rgba(186, 61, 52, .14); }
 .play-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-top: 13px; }
 .rule-note { display: flex; align-items: flex-start; gap: 7px; color: #777770; font-size: 10px; line-height: 1.6; }
 .rule-mark { width: 15px; height: 15px; flex: 0 0 15px; display: inline-grid; place-items: center; border: 1px solid #b0b0a9; border-radius: 50%; font-family: "DM Mono", monospace; font-size: 9px; }
-.forfeit-button { flex: 0 0 auto; padding: 0; border: 0; background: transparent; color: #696962; font: inherit; font-size: 11px; cursor: pointer; }
-.forfeit-button:hover { color: var(--ink); }
+.play-action-buttons { display: flex; align-items: center; gap: 14px; }
+.forfeit-button, .read-word-button { flex: 0 0 auto; padding: 0; border: 0; background: transparent; color: #696962; font: inherit; font-size: 11px; cursor: pointer; }
+.forfeit-button:hover, .read-word-button:hover:not(:disabled) { color: var(--ink); }
 .forfeit-button span { margin-left: 4px; }
+.read-word-button { font-weight: 700; }
+.read-word-button span { display: inline-block; margin-left: 4px; font-family: sans-serif; transform: rotate(180deg); }
+.read-word-button:disabled { cursor: not-allowed; opacity: .4; }
 
 .history-column { min-width: 0; padding-left: 28px; border-left: 1px solid var(--line); }
 .history-heading { margin-bottom: 0; }
@@ -261,6 +270,7 @@ main { flex: 1; }
 @keyframes lane-scroll { from { background-position: 0 0; } to { background-position: 31px 0; } }
 @keyframes player-pulse { from { transform: scaleX(.55); opacity: .45; } to { transform: scaleX(1); opacity: 1; } }
 @keyframes symbol-spin { to { transform: rotate(360deg); } }
+@keyframes error-pop { from { transform: translateY(-5px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 @media (max-width: 760px) {
 	.app-shell { width: min(100% - 36px, 560px); }
@@ -401,4 +411,164 @@ main { flex: 1; }
 
 @media (prefers-reduced-motion: reduce) {
 	.time-progress > span { transition: none; }
+	.word-error-banner { animation: none; }
+}
+
+.home-screen { width: min(100%, 960px); margin: 0 auto; padding: 55px 0 64px; }
+.home-copy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, .55fr); align-items: end; gap: 20px 50px; padding-bottom: 27px; border-bottom: 2px solid var(--ink); }
+.home-copy .eyebrow { grid-column: 1 / -1; margin: 0 0 -8px; font-size: 12px; }
+.home-copy h1 { margin: 0; font-size: 58px; font-weight: 800; line-height: 1.08; }
+.home-copy h1 span { color: #7b8178; }
+.home-copy > p:last-child { margin: 0 0 5px; color: #646a63; font-size: 16px; line-height: 1.6; }
+.home-mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 25px; }
+.home-mode-option { position: relative; min-height: 190px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 9px; padding: 23px 62px 23px 24px; border: 2px solid var(--ink); border-radius: 14px; background: #fff; color: var(--ink); text-align: left; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
+.home-mode-option:hover, .home-mode-option:focus-visible { transform: translateY(-4px); box-shadow: 0 8px 0 #d9dcd7; background: #f2f3f0; }
+.home-mode-option-time { background: #e8e9e6; }
+.home-mode-option-time:hover, .home-mode-option-time:focus-visible { background: #dcdfda; }
+.home-mode-number { color: #6c726b; font-family: "DM Mono", "SFMono-Regular", Consolas, monospace; font-size: 12px; }
+.home-mode-option strong { font-size: 26px; font-weight: 800; }
+.home-mode-option > span:nth-last-of-type(1) { color: #666d64; font-size: 14px; line-height: 1.5; }
+.home-mode-option b { position: absolute; top: 50%; right: 24px; font-size: 30px; font-weight: 500; transform: translateY(-50%); }
+.home-rules { display: grid; grid-template-columns: 170px repeat(3, minmax(0, 1fr)); align-items: center; gap: 12px 18px; margin-top: 28px; padding: 20px 0 0; border-top: 1px solid var(--line); }
+.home-rules h2 { margin: 0; font-size: 15px; font-weight: 800; }
+.home-rules p { display: flex; gap: 8px; margin: 0; color: #666d64; font-size: 12px; line-height: 1.5; }
+.home-rules p span { color: #202322; font-family: "DM Mono", "SFMono-Regular", Consolas, monospace; font-size: 11px; font-weight: 700; }
+
+.game-layout { width: min(100%, 1080px); gap: 21px; padding-top: 22px; }
+.section-kicker { font-size: 12px; }
+.match-surface { overflow: hidden; border: 2px solid var(--ink); border-radius: 18px; background: var(--ink); box-shadow: 0 8px 24px rgba(23, 25, 26, .08); }
+.players { border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; }
+.player { min-height: 76px; padding: 0 24px; }
+.player-name { font-size: 14px; }
+.player-index { font-size: 11px; }
+.player-score { font-size: 22px; }
+.turn-board { min-height: 390px; padding: 27px 32px 30px; border: 0; border-radius: 0; }
+.turn-board::before { height: 6px; }
+.turn-board-top { padding-top: 3px; font-size: 12px; }
+.time-progress { height: 14px; margin-top: 17px; border-radius: 999px; }
+.beat-lane { margin-top: 20px; }
+.prompt-content { min-height: 260px; }
+.required-letter { font-size: 138px; }
+.prompt-label { font-size: 16px; }
+.prompt-arrow { font-size: 54px; }
+.result-message { min-height: 290px; }
+.result-label { font-size: 12px; }
+.result-message strong { font-size: 54px; }
+.result-caption { font-size: 12px; }
+.word-form { grid-template-columns: minmax(0, 1fr) 174px; gap: 0 12px; margin-top: 17px; }
+.word-input-wrap, .submit-button { height: 72px; border-radius: 12px; }
+.word-input-wrap { padding: 0 21px; }
+.word-input-wrap input { font-size: 19px; }
+.word-input-wrap kbd { font-size: 11px; }
+.submit-button { min-height: 72px; justify-content: center; font-size: 16px; }
+.submit-arrow { margin-left: 13px; }
+.input-message { margin-top: 9px; font-size: 12px; }
+.play-actions { align-items: center; margin-top: 12px; }
+.rule-note, .forfeit-button, .read-word-button { font-size: 12px; }
+.rule-mark { width: 18px; height: 18px; flex-basis: 18px; font-size: 11px; }
+.history-column { padding-top: 17px; }
+.history-footer, .history-footer > span:last-child { font-size: 12px; }
+.history-footer { padding-top: 12px; }
+
+@media (max-width: 760px) {
+	.home-screen { width: min(100%, 560px); padding: 36px 0 44px; }
+	.home-copy { grid-template-columns: 1fr; gap: 14px; }
+	.home-copy .eyebrow { margin: 0; }
+	.home-copy h1 { font-size: 46px; }
+	.home-copy > p:last-child { font-size: 14px; }
+	.home-mode-grid { grid-template-columns: 1fr; gap: 12px; }
+	.home-mode-option { min-height: 148px; }
+	.home-rules { grid-template-columns: 1fr; gap: 10px; }
+	.home-rules h2 { margin-bottom: 2px; }
+	.game-layout { width: min(100%, 700px); gap: 20px; }
+	.match-surface { border-radius: 16px; }
+	.player { min-height: 68px; padding: 0 17px; }
+	.turn-board { min-height: 340px; padding: 23px 24px 25px; }
+	.prompt-content { min-height: 220px; }
+	.required-letter { font-size: 120px; }
+	.result-message { min-height: 245px; }
+	.history-column { padding-top: 14px; }
+}
+
+@media (max-width: 430px) {
+	.home-screen { padding: 27px 0 35px; }
+	.home-copy h1 { font-size: 39px; }
+	.home-mode-option { min-height: 136px; padding: 18px 54px 18px 17px; border-radius: 12px; }
+	.home-mode-option strong { font-size: 22px; }
+	.home-mode-option > span:nth-last-of-type(1) { font-size: 12px; }
+	.game-layout { padding-top: 16px; }
+	.section-heading { min-height: 42px; }
+	.section-kicker { font-size: 12px; }
+	.section-heading h2 { font-size: 19px; }
+	.section-controls { gap: 6px; }
+	.mode-change-button { min-height: 36px; padding: 0 9px; font-size: 11px; }
+	.match-surface { border-radius: 13px; }
+	.player { min-height: 58px; gap: 6px; padding: 0 10px; }
+	.player-name { font-size: 12px; }
+	.player-index { font-size: 9px; }
+	.player-score { font-size: 19px; }
+	.turn-board { min-height: 300px; padding: 19px 16px 20px; }
+	.turn-board-top { font-size: 10px; }
+	.time-progress { height: 11px; margin-top: 13px; }
+	.beat-lane { margin-top: 13px; }
+	.prompt-content { min-height: 188px; }
+	.required-letter { font-size: 98px; }
+	.prompt-label { font-size: 14px; }
+	.prompt-arrow { font-size: 40px; }
+	.result-message { min-height: 215px; }
+	.result-message strong { font-size: 44px; }
+	.word-form { grid-template-columns: minmax(0, 1fr) 103px; gap: 0 7px; margin-top: 12px; }
+	.word-input-wrap, .submit-button { height: 58px; border-radius: 9px; }
+	.word-input-wrap { padding: 0 12px; }
+	.word-input-wrap input { font-size: 16px; }
+	.word-input-wrap kbd { display: none; }
+	.submit-button { min-height: 58px; padding: 0 8px; font-size: 13px; }
+	.submit-arrow { display: none; }
+	.rule-note { font-size: 11px; }
+	.history-footer, .history-footer > span:last-child { font-size: 12px; }
+}
+
+/* Keep supporting copy readable and consistent across the home and game screens. */
+.header-meta,
+.home-copy .eyebrow,
+.home-mode-number,
+.home-rules p,
+.home-rules p span,
+.section-kicker,
+.mode-change-button,
+.player-index,
+.turn-board-top,
+.result-label,
+.result-caption,
+.word-input-wrap kbd,
+.input-message,
+.rule-note,
+.rule-mark,
+.forfeit-button,
+.read-word-button,
+.word-count,
+.entry-player,
+.entry-ending,
+.empty-history > span:last-child,
+.history-footer,
+.history-footer > span:last-child,
+.site-footer,
+.mode-kicker,
+.mode-intro,
+.mode-number,
+.mode-option > span:nth-last-of-type(1) {
+	font-size: 12px;
+}
+
+/* Text placed on the dark match board must keep full contrast. */
+.turn-board,
+.turn-board-top,
+.turn-board-urgent .turn-board-top span:last-child,
+.turn-board .prompt-label,
+.turn-board .required-letter,
+.turn-board .required-letter.has-letter,
+.turn-board .result-label,
+.turn-board .result-message strong,
+.turn-board .result-caption {
+	color: #fff;
 }
