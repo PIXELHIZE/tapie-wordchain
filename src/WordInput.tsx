@@ -7,10 +7,11 @@ type Props = {
   disabled: boolean
   error: string
   remainingMs: number
+  streak: number
   onEdit: () => void
 }
 
-const WordInput = ({ onSubmit, disabled, error, remainingMs, onEdit }: Props) => {
+const WordInput = ({ onSubmit, disabled, error, remainingMs, streak, onEdit }: Props) => {
   const [text, setText] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -28,10 +29,12 @@ const WordInput = ({ onSubmit, disabled, error, remainingMs, onEdit }: Props) =>
     submittingRef.current = true
     setIsSubmitting(true)
     try {
-      if (await onSubmit(word)) setText("")
+      await onSubmit(word)
+      setText("")
     } finally {
       submittingRef.current = false
       setIsSubmitting(false)
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }))
     }
   }
 
@@ -63,7 +66,7 @@ const WordInput = ({ onSubmit, disabled, error, remainingMs, onEdit }: Props) =>
           <span>{isSubmitting ? "확인 중" : "잇기"}</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg>
         </button>
       </div>
-      {text.trim() && !error && <p className="point-preview">예상 +{getWordPoints(text.trim(), remainingMs).total}점 <span>글자 {getWordPoints(text.trim(), remainingMs).lengthPoints} + 시간 {getWordPoints(text.trim(), remainingMs).timePoints}</span></p>}
+      {text.trim() && !error && <p className="point-preview">예상 +{getWordPoints(text.trim(), remainingMs, streak).total}점 <span>글자 {getWordPoints(text.trim(), remainingMs, streak).lengthPoints} + 길이 {getWordPoints(text.trim(), remainingMs, streak).lengthBonus} + 시간 {getWordPoints(text.trim(), remainingMs, streak).timePoints} + 연속 {getWordPoints(text.trim(), remainingMs, streak).comboPoints}</span></p>}
       {error && <p className="word-error" id="word-error" role="alert">{error}</p>}
     </form>
   )

@@ -12,7 +12,7 @@ export const createWordEngine = (words: string[], random: () => number = Math.ra
   const canContinue = (word: string, used: Set<string>) => buckets(word).some((bucket) => bucket.some((candidate) => candidate !== word && !used.has(candidate)))
 
   return {
-    evaluateMove(previousWord: string | undefined, word: string, usedWords: string[]): { error: string } | { botWord: string } {
+    evaluateMove(previousWord: string | undefined, word: string, usedWords: string[], moveRandom = random): { error: string } | { botWord: string } {
       const error = isValidWord(previousWord, word, usedWords)
       if (error) return { error }
       if (!dictionary.has(word)) return { error: "사전에 없는 단어예요." }
@@ -21,7 +21,7 @@ export const createWordEngine = (words: string[], random: () => number = Math.ra
       // Prefer short words and avoid a one-shot reply from the bot as well.
       for (const shortOnly of [true, false]) {
         for (const bucket of replies) {
-          const offset = Math.floor(random() * bucket.length)
+          const offset = Math.floor(moveRandom() * bucket.length)
           for (let i = 0; i < bucket.length; i++) {
             const candidate = bucket[(offset + i) % bucket.length]
             if (used.has(candidate) || (shortOnly && candidate.length > 5)) continue

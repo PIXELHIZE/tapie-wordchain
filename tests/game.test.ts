@@ -9,7 +9,7 @@ import { createWordEngine } from "../worker/engine.ts"
 
 const fixtureWords = ["사과", "과쁨", "과일", "일기", "기차", "차표", "표사", "기쁨"]
 const engine = createWordEngine(fixtureWords, () => 0)
-const migration = readFileSync(new URL("../migrations/0001_game_rankings.sql", import.meta.url), "utf8")
+const migration = ["0001_game_rankings.sql", "0002_scoring.sql"].map((file) => readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8")).join("\n")
 
 const harness = () => {
   const sqlite = new DatabaseSync(":memory:")
@@ -39,10 +39,10 @@ const move = (app: ReturnType<typeof harness>, game: GameSnapshot, word = "사�
 test("time gets shorter every two rounds, reaching three seconds at round eleven", () => {
   for (const [completed, ms] of [[0, 12000], [1, 12000], [2, 10000], [4, 8000], [6, 6000], [8, 4000], [10, 3000], [100, 3000]]) assert.equal(getTurnDurationMs(completed), ms)
 })
-test("points combine normalized word length and whole seconds remaining", () => {
-  assert.deepEqual(getWordPoints("사과", 11500), { lengthPoints: 20, timePoints: 55, total: 75 })
-  assert.equal(getWordPoints("사과".normalize("NFD"), 11500).total, 75)
-  assert.equal(getWordPoints("끝말잇기", 8000).total, 80)
+test("points combine length, long-word bonus, tenths of seconds and streaks", () => {
+  assert.deepEqual(getWordPoints("사과", 11500), { lengthPoints: 20, lengthBonus: 0, timePoints: 115, comboPoints: 0, total: 135 })
+  assert.equal(getWordPoints("사과".normalize("NFD"), 11500).total, 135)
+  assert.equal(getWordPoints("끝말잇기", 8000).total, 128)
   assert.equal(getWordPoints("사과", -100).timePoints, 0)
 })
 test("one-shot words and duplicate-exhausted replies are rejected", () => {
@@ -75,17 +75,17 @@ test("one accepted word adds a bot reply and server-calculated live points", asy
   const response = await move(app, game)
   assert.equal(response.status, 200)
   assert.deepEqual(response.body.game.words, ["사과", "과일"])
-  assert.equal(response.body.game.score, 75)
-  assert.equal(response.body.game.lastGain, 75)
+  assert.equal(response.body.game.score, 130)
+  assert.equal(response.body.game.lastGain, 130)
   assert.equal(response.body.game.revision, 1)
   assert.equal(response.body.game.remainingMs, 12000)
   app.time(3000)
   const next = await move(app, response.body.game, "일기")
-  assert.equal(next.body.game.score, 145)
+  assert.equal(next.body.game.score, 253)
   assert.equal(next.body.game.turnDurationMs, 10000)
 })
 test("invalid and one-shot input never adds points or resets the deadline", async () => {
-  const app = harness(); const game = await start(app)
+  const app = harness(); let game = await start(app)
   app.time(4000)
   for (const word of ["기쁨", "없는말", "a"]) {
     const response = await move(app, game, word)
@@ -93,6 +93,7 @@ test("invalid and one-shot input never adds points or resets the deadline", asyn
     assert.equal(response.body.game.score, 0)
     assert.equal(response.body.game.remainingMs, 8000)
     assert.deepEqual(response.body.game.words, [])
+    game = response.body.game
   }
 })
 test("replayed and simultaneous move requests only count once", async () => {
@@ -101,7 +102,7 @@ test("replayed and simultaneous move requests only count once", async () => {
   const responses = await Promise.all([move(app, game), move(app, game)])
   assert.deepEqual(responses.map((item) => item.status).sort(), [200, 409])
   const saved = (await app.send(`games/${game.id}`)).body.game
-  assert.equal(saved.score, 75)
+  assert.equal(saved.score, 130)
   assert.equal(saved.words.length, 2)
   assert.equal((await move(app, game)).status, 409)
 })
@@ -126,7 +127,7 @@ test("forfeit keeps the earned points but subsequent moves are rejected", async 
   const finished = (await app.send(`games/${game.id}/finish`, { reason: "forfeit" })).body.game
   assert.equal(finished.status, "finished")
   assert.equal(finished.reason, "forfeit")
-  assert.equal(finished.score, 80)
+  assert.equal(finished.score, 140)
   assert.equal((await move(app, game, "일기")).status, 409)
 })
 test("ranking ignores client scores and uses only the finished session's score", async () => {
@@ -135,9 +136,9 @@ test("ranking ignores client scores and uses only the finished session's score",
   await app.send(`games/${game.id}/finish`, { reason: "forfeit" })
   const response = await app.send(`games/${game.id}/ranking`, { nickname: "테스트", score: 999999, words: ["가짜"] })
   assert.equal(response.status, 200)
-  assert.equal(response.body.entry.score, 75)
+  assert.equal(response.body.entry.score, 130)
   assert.equal(response.body.entry.rank, 1)
-  assert.equal(response.body.rankings[0].score, 75)
+  assert.equal(response.body.rankings[0].score, 130)
 })
 test("registration is idempotent and cannot rename a completed record", async () => {
   const app = harness(); const game = (await move(app, await start(app))).body.game
@@ -158,7 +159,7 @@ test("same-score records use registration time to break ties", async () => {
   }
   const list = (await app.send("rankings")).body.rankings
   assert.deepEqual(list.map((row) => row.nickname), ["먼저", "나중"])
-  assert.deepEqual(list.map((row) => row.score), [75, 75])
+  assert.deepEqual(list.map((row) => row.score), [130, 130])
 })
 test("empty games and invalid nicknames cannot be ranked", async () => {
   const app = harness(); const empty = await start(app)
@@ -186,4 +187,46 @@ test("missing API paths return JSON and malformed requests are rejected", async 
   const malformed = await app.api(new Request(`https://game.test/api/games/${game.id}/words`, { method: "POST", body: "{" }), app.env)
   assert.equal(malformed.status, 400)
   assert.equal((await app.send(`games/${game.id}/finish`, { reason: "win" })).status, 400)
+})
+
+test("wrong submissions deduct points once, reset streak and keep the deadline", async () => {
+  const app = harness()
+  let game = (await move(app, await start(app))).body.game
+  app.time(1000)
+  const bad = await move(app, game, "없는말")
+  assert.equal(bad.status, 422)
+  assert.equal(bad.body.game.score, 122)
+  assert.equal(bad.body.game.lastGain, -18)
+  assert.equal(bad.body.game.streak, 0)
+  assert.equal(bad.body.game.mistakes, 1)
+  assert.equal(bad.body.game.rounds, 1)
+  assert.equal(bad.body.game.remainingMs, 11000)
+  assert.equal((await move(app, game, "없는말")).status, 409)
+  game = bad.body.game
+  const good = await move(app, game, "일기")
+  assert.equal(good.body.game.score, 252)
+  assert.equal(good.body.game.streak, 1)
+  assert.equal(good.body.game.turnDurationMs, 10000)
+})
+
+test("offline ranking replays words and penalties instead of accepting the client score", async () => {
+  const { createLocalRun, submitLocalWord, finishLocalRun, getTranscript } = await import("../shared/run.ts")
+  const app = harness()
+  let run = createLocalRun(crypto.randomUUID(), 0)
+  run = submitLocalWord(run, "사과", 1000, engine).run
+  run = submitLocalWord(run, "없는말", 1000, engine).run
+  run = finishLocalRun(run, "forfeit", 2000)
+  const response = await app.send("local-ranking", { nickname: "오프라인", transcript: getTranscript(run), score: 999999 })
+  assert.equal(response.status, 200)
+  assert.equal(response.body.entry.score, 112)
+  const replay = await app.send("local-ranking", { nickname: "변경", transcript: getTranscript(run) })
+  assert.equal(replay.body.rankings.length, 1)
+  assert.equal(replay.body.entry.nickname, "오프라인")
+})
+test("offline ranking rejects a forged timeout and invalid transcript", async () => {
+  const app = harness()
+  for (const transcript of [{}, { version: 2, id: crypto.randomUUID(), attempts: [{ word: "사과", elapsedMs: -100 }], reason: "forfeit", finishElapsedMs: 0 }, { version: 2, id: crypto.randomUUID(), attempts: [], reason: "timeout", finishElapsedMs: 1 }]) {
+    assert.equal((await app.send("local-ranking", { nickname: "잘못된기록", transcript })).status, 400)
+  }
+  assert.equal((await app.send("rankings")).body.rankings.length, 0)
 })

@@ -222,3 +222,18 @@
   .ranking-entry > strong { font-size: 16px; }
   .ranking-score { font-size: 21px; }
 }
+
+.connection-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; color: #777; font-size: 14px; }
+.local-toggle { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0; border: 0; background: none; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.local-toggle span { padding: 5px 9px; border-radius: 6px; background: #f1f1f1; color: #777; }
+.local-toggle[aria-checked="true"] span { background: #111; color: white; }
+.score-details { margin: -4px 0 16px; color: #666; font-size: 14px; line-height: 1.6; }
+.pending-label { display: block; margin-top: 4px; color: #777; font-size: 14px; font-weight: 400; }
+.survival-score { flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; }
+@media (max-width: 480px) {
+  .connection-bar { align-items: flex-start; padding-top: 8px; gap: 10px; }
+  .connection-bar > span { padding-top: 13px; font-size: 13px; }
+  .local-toggle { gap: 6px; font-size: 13px; }
+  .game-screen { padding-top: 12px; }
+  .survival-score .bot-opponent { width: 100%; margin-left: 0; }
+}

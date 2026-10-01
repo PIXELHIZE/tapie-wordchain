@@ -1,19 +1,20 @@
-import { getTurnDurationMs, getWordPoints, type GameSnapshot, type RankingEntry } from "../shared/game.ts"
+import { getTurnDurationMs, getWordPoints, getWrongPenalty, type GameSnapshot, type RankingEntry } from "../shared/game.ts"
+import { replayTranscript } from "../shared/run.ts"
 import type { WordEngine } from "./engine.ts"
 
 export type Env = { DB: D1Database; ASSETS: Fetcher }
-type GameRow = { id: string; words: string; score: number; revision: number; last_gain: number; deadline: number; status: "active" | "finished"; reason: "timeout" | "forfeit" | null; ranked: number }
+type GameRow = { id: string; words: string; score: number; revision: number; streak: number; mistakes: number; last_gain: number; deadline: number; status: "active" | "finished"; reason: "timeout" | "forfeit" | null; ranked: number }
 type RankRow = { game_id: string; nickname: string; score: number; created_at: number }
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } })
 const gameSelect = "SELECT g.*, EXISTS(SELECT 1 FROM rankings r WHERE r.game_id = g.id) AS ranked FROM games g WHERE g.id = ?"
 const snapshot = (game: GameRow, now: number): GameSnapshot => ({
-  id: game.id, words: JSON.parse(game.words), score: game.score, revision: game.revision,
+  id: game.id, words: JSON.parse(game.words), score: game.score, revision: game.revision, rounds: JSON.parse(game.words).length / 2, streak: game.streak, mistakes: game.mistakes,
   status: game.status, reason: game.reason, ranked: Boolean(game.ranked), lastGain: game.last_gain,
-  turnDurationMs: getTurnDurationMs(game.revision), remainingMs: game.status === "active" ? Math.max(0, game.deadline - now) : 0,
+  turnDurationMs: getTurnDurationMs(JSON.parse(game.words).length / 2), remainingMs: game.status === "active" ? Math.max(0, game.deadline - now) : 0,
 })
 const readBody = async (request: Request): Promise<Record<string, unknown>> => {
   const raw = await request.text()
-  if (raw.length > 2048) throw new Error("body")
+  if (raw.length > 256000) throw new Error("body")
   const body: unknown = JSON.parse(raw)
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("body")
   return body as Record<string, unknown>
@@ -29,6 +30,15 @@ export const createApi = (engine: WordEngine, now: () => number = Date.now) => {
     const { results } = await db.prepare("SELECT nickname, score, created_at FROM rankings ORDER BY score DESC, created_at ASC, game_id ASC LIMIT 20").all<RankRow>()
     return results.map((row, index) => ({ rank: index + 1, nickname: row.nickname, score: row.score, createdAt: row.created_at }))
   }
+  const register = async (db: D1Database, id: string, input: unknown) => {
+    const nickname = typeof input === "string" ? input.trim().normalize("NFC") : ""
+    if (!/^[가-힣a-zA-Z0-9_ ]{1,12}$/u.test(nickname)) return json({ error: "닉네임은 한글·영문·숫자로 1~12자 입력해 주세요." }, 400)
+    await db.prepare("INSERT INTO rankings (game_id, nickname, score, created_at) SELECT id, ?, score, ? FROM games WHERE id = ? AND status = 'finished' AND score > 0 ON CONFLICT(game_id) DO NOTHING").bind(nickname, now(), id).run()
+    const row = await db.prepare("SELECT * FROM rankings WHERE game_id = ?").bind(id).first<RankRow>()
+    if (!row) return json({ error: "점수가 있는 종료 기록만 등록할 수 있어요." }, 409)
+    const count = await db.prepare("SELECT COUNT(*) AS total FROM rankings WHERE score > ? OR (score = ? AND (created_at < ? OR (created_at = ? AND game_id < ?)))").bind(row.score, row.score, row.created_at, row.created_at, row.game_id).first<{ total: number }>()
+    return json({ entry: { rank: count!.total + 1, nickname: row.nickname, score: row.score, createdAt: row.created_at }, rankings: await rankings(db) })
+  }
 
   return async (request: Request, env: Env): Promise<Response> => {
     const url = new URL(request.url)
@@ -37,6 +47,15 @@ export const createApi = (engine: WordEngine, now: () => number = Date.now) => {
     const receivedAt = now()
     try {
       if (request.method === "GET" && path === "/api/rankings") return json({ rankings: await rankings(env.DB) })
+      if (request.method === "POST" && path === "/api/local-ranking") {
+        const body = await readBody(request)
+        let run
+        try { run = replayTranscript(body.transcript, engine) } catch { return json({ error: "경기 기록을 확인해 주세요." }, 400) }
+        const game = run.game
+        if (!game.score) return json({ error: "점수가 있는 기록만 등록할 수 있어요." }, 409)
+        await env.DB.prepare("INSERT INTO games (id, words, score, revision, streak, mistakes, last_gain, deadline, status, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'finished', ?, ?) ON CONFLICT(id) DO NOTHING").bind(game.id, JSON.stringify(game.words), game.score, game.revision, game.streak, game.mistakes, game.lastGain, game.reason, receivedAt).run()
+        return register(env.DB, game.id, body.nickname)
+      }
       if (request.method === "POST" && path === "/api/games") {
         const id = crypto.randomUUID()
         await env.DB.prepare("INSERT INTO games (id, deadline, created_at) VALUES (?, ?, ?)").bind(id, receivedAt + getTurnDurationMs(0), receivedAt).run()
@@ -59,11 +78,16 @@ export const createApi = (engine: WordEngine, now: () => number = Date.now) => {
         const word = body.word.trim().normalize("NFC")
         const words: string[] = JSON.parse(game.words)
         const move = engine.evaluateMove(words.at(-1), word, words)
-        if ("error" in move) return json({ game: snapshot(game, now()), error: move.error }, 422)
+        if ("error" in move) {
+          const penalty = Math.min(game.score, getWrongPenalty(game.streak))
+          const updated = await env.DB.prepare("UPDATE games SET score = score - ?, last_gain = ?, streak = 0, mistakes = mistakes + 1, revision = revision + 1 WHERE id = ? AND revision = ? AND status = 'active'").bind(penalty, -penalty, game.id, game.revision).run()
+          game = (await getGame(env.DB, game.id))!
+          return json({ game: snapshot(game, now()), error: move.error }, updated.meta.changes ? 422 : 409)
+        }
         const nextWords = [...words, word, move.botWord]
-        const deadline = now() + getTurnDurationMs(game.revision + 1)
-        const gain = getWordPoints(word, game.deadline - receivedAt).total
-        const updated = await env.DB.prepare("UPDATE games SET words = ?, score = score + ?, last_gain = ?, revision = revision + 1, deadline = ? WHERE id = ? AND revision = ? AND status = 'active'").bind(JSON.stringify(nextWords), gain, gain, deadline, game.id, game.revision).run()
+        const deadline = now() + getTurnDurationMs(nextWords.length / 2)
+        const gain = getWordPoints(word, game.deadline - receivedAt, game.streak).total
+        const updated = await env.DB.prepare("UPDATE games SET words = ?, score = score + ?, last_gain = ?, revision = revision + 1, streak = streak + 1, deadline = ? WHERE id = ? AND revision = ? AND status = 'active'").bind(JSON.stringify(nextWords), gain, gain, deadline, game.id, game.revision).run()
         game = (await getGame(env.DB, game.id))!
         if (!updated.meta.changes) return json({ game: snapshot(game, now()), error: "이미 처리된 차례예요." }, 409)
         return json({ game: snapshot(game, now()) })
@@ -78,13 +102,7 @@ export const createApi = (engine: WordEngine, now: () => number = Date.now) => {
 
       if (match[2] === "ranking") {
         if (game.status !== "finished" || !game.score) return json({ error: "한 단어 이상 이은 경기가 끝나야 등록할 수 있어요." }, 409)
-        const nickname = typeof body.nickname === "string" ? body.nickname.trim().normalize("NFC") : ""
-        if (!/^[가-힣a-zA-Z0-9_ ]{1,12}$/u.test(nickname)) return json({ error: "닉네임은 한글·영문·숫자로 1~12자 입력해 주세요." }, 400)
-        const recordedAt = now()
-        await env.DB.prepare("INSERT INTO rankings (game_id, nickname, score, created_at) SELECT id, ?, score, ? FROM games WHERE id = ? AND status = 'finished' AND score > 0 ON CONFLICT(game_id) DO NOTHING").bind(nickname, recordedAt, game.id).run()
-        const row = (await env.DB.prepare("SELECT * FROM rankings WHERE game_id = ?").bind(game.id).first<RankRow>())!
-        const count = await env.DB.prepare("SELECT COUNT(*) AS total FROM rankings WHERE score > ? OR (score = ? AND (created_at < ? OR (created_at = ? AND game_id < ?)))").bind(row.score, row.score, row.created_at, row.created_at, row.game_id).first<{ total: number }>()
-        return json({ entry: { rank: count!.total + 1, nickname: row.nickname, score: row.score, createdAt: row.created_at }, rankings: await rankings(env.DB) })
+        return register(env.DB, game.id, body.nickname)
       }
       return json({ error: "요청한 API를 찾을 수 없어요." }, 404)
     } catch (error) {
