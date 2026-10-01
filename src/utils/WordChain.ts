@@ -49,14 +49,16 @@ export const isValidWord = (prev: string | undefined, next: string, used: string
     return null
 }
 
-export const isWordInDictionary = async (word: string) => {
+export const isWordInDictionary = async (word: string, signal?: AbortSignal) => {
     const response = await fetch("/api/validate-word", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ word: word.normalize("NFC") }),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(6000)]) : AbortSignal.timeout(6000),
     })
 
     if (!response.ok) throw new Error("Dictionary validation failed")
     const result: { valid: boolean } = await response.json()
+    if (typeof result.valid !== "boolean") throw new Error("Invalid dictionary response")
     return result.valid
 }

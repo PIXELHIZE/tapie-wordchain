@@ -1,88 +1,34 @@
-# TAPIE Word Club
+# 테이피 끝말잇기
 
-끝말잇기 게임입니다. `korean_kr.sql`의 한글 명사를 서버 시작 시 읽어 첫 글자별로 인덱싱하고, `/api/computer-word`가 아직 사용하지 않은 이어쓰기 단어를 무작위로 반환합니다. 별도의 MySQL 서버 없이 SQL 덤프를 데이터 원본으로 사용합니다.
+테이피와 한 단어씩 이어가는 우리말 끝말잇기입니다. 흑백 화면에서 모드를 고르고 바로 시작할 수 있습니다.
 
-## Run
+- **데스매치**: 시간 제한 없이 상대가 막힐 때까지 단어를 잇습니다.
+- **타임어택**: 각자의 제한 시간이 15초로 시작해, 5라운드마다 2초씩 줄어듭니다. 1~5라운드 15초, 6~10라운드 13초, 이후 11·9·7·5초를 거쳐 31라운드부터 3초를 유지합니다. 한 라운드는 나와 테이피의 차례 한 번씩입니다.
+
+두 글자 이상의 한글 단어를 입력하고, 앞 단어의 마지막 글자로 시작합니다. 중복 단어는 사용할 수 없습니다. 두음법칙으로 허용되는 시작 글자는 화면에 표시됩니다. 제때 제출한 단어는 사전 확인 동안 시간을 멈추고, 거절되면 제출 직전 남은 시간으로 이어갑니다.
+
+## 실행
+
+Node.js 24 이상을 사용합니다.
 
 ```sh
-npm install
+npm ci
 npm run dev
 ```
 
-프로덕션 실행은 먼저 `npm run build`를 실행한 뒤 `npm start`를 사용합니다. 기본 주소는 개발 모드 `http://localhost:5173`, 프로덕션 `http://localhost:4173`입니다.
+기본 개발 주소는 `http://localhost:5173`입니다. 다른 포트는 `PORT=5187 npm run dev`처럼 지정할 수 있습니다.
 
-## React + TypeScript + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+npm test
+npm run lint
+npm run build
+npm start
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+프로덕션 기본 주소는 `http://localhost:4173`입니다.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 단어 사전
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+`korean_kr.sql`의 한글 명사와 `kkutu_words.txt`를 서버 시작 시 읽어 첫 글자별로 인덱싱합니다. `/api/validate-word`가 단어를 검증하고, `/api/computer-word`가 사용하지 않은 다음 단어를 반환합니다. 별도의 MySQL 서버는 필요하지 않습니다. Vercel에서는 `api/`의 함수가 같은 사전을 사용합니다. 데이터 출처와 라이선스는 `THIRD_PARTY_NOTICES.md`를 참고하세요.
 
-```
+게임 상태는 한 곳에서 관리하며, 종료되거나 재시작된 게임의 늦은 응답은 무시합니다. 사전 요청에는 6초 제한과 취소 처리가 적용됩니다. `npm test`는 시간 단계, 통신 지연, 시간 초과, 기권·재시작 중 응답 경합과 단어 규칙을 검증합니다.
