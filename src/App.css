@@ -68,6 +68,11 @@ main { flex: 1; }
 .player + .player { border-left: 1px solid var(--line); }
 .player-active { color: var(--ink); background: #e6e6df; }
 .player-winner { color: var(--ink); background: var(--acid); }
+.player-loser { color: #747a72; background: #e4e6e1; }
+.player-result-badge { margin-left: auto; padding: 5px 9px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; font-weight: 800; line-height: 1; }
+.player-winner .player-result-badge { background: var(--ink); color: #fff; }
+.player-loser .player-result-badge { opacity: .72; }
+.player-result-badge + .player-score { margin-left: 4px; }
 .player-index { font-size: 10px; }
 .player-name { font-size: 10px; font-weight: 600; }
 .player-score { margin-left: auto; font-size: 11px; }
@@ -84,6 +89,11 @@ main { flex: 1; }
 .result-label { color: var(--acid); font-size: 10px; }
 .result-message strong { margin-top: 2px; font-size: 38px; line-height: 1.2; }
 .result-caption { margin-top: 7px; color: #aaa; font-size: 10px; }
+.result-symbol { width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 14px; border-radius: 50%; background: #fff; color: var(--ink); font-size: 24px; }
+.result-loser { margin-top: 7px; padding: 5px 10px; border: 1px solid rgba(255, 255, 255, .5); border-radius: 999px; color: #fff; font-size: 12px; font-weight: 700; }
+.result-restart-button { margin-top: 22px; padding: 12px 18px; border: 2px solid #fff; border-radius: 9px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; transition: transform .16s ease, box-shadow .16s ease; }
+.result-restart-button:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--coral); }
+.result-restart-button span { margin-left: 10px; }
 
 .word-form { display: grid; grid-template-columns: minmax(0, 1fr) 134px; gap: 0 9px; margin-top: 13px; }
 .word-input-wrap { min-width: 0; height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border: 1px solid #cacac3; background: #fff; transition: border .18s ease, box-shadow .18s ease; }
@@ -571,4 +581,66 @@ main { flex: 1; }
 .turn-board .result-message strong,
 .turn-board .result-caption {
 	color: #fff;
+}
+
+/* Make the finished state unmistakable at a glance. */
+.player.player-winner {
+	background: var(--acid);
+	color: var(--ink);
+}
+
+.player.player-loser {
+	background: #d8dbd5;
+	color: #686e67;
+	opacity: .78;
+}
+
+.player-result-badge {
+	font-size: 12px;
+}
+
+.turn-board-finished .result-message {
+	width: min(100%, 620px);
+	min-height: 330px;
+	align-self: center;
+	align-items: center;
+	justify-content: center;
+	gap: 15px;
+	margin: auto;
+	padding: 34px 30px;
+	border: 2px solid rgba(255, 255, 255, .28);
+	border-radius: 18px;
+	background: radial-gradient(circle at 50% 25%, rgba(255, 255, 255, .1), transparent 55%);
+	text-align: center;
+}
+
+.turn-board-finished .result-message strong {
+	margin: 2px 0 4px;
+	font-size: clamp(58px, 9vw, 94px);
+	line-height: 1;
+}
+
+.turn-board-finished .result-label {
+	margin: 0;
+	font-weight: 900;
+	letter-spacing: .12em;
+}
+
+.turn-board-finished .result-symbol,
+.turn-board-finished .result-loser,
+.turn-board-finished .result-caption,
+.turn-board-finished .result-restart-button {
+	margin-top: 0;
+	margin-bottom: 0;
+}
+
+.turn-board-finished .result-restart-button {
+	margin-top: 9px;
+}
+
+@media (max-width: 430px) {
+	.player-result-badge { padding: 4px 6px; font-size: 10px; }
+	.turn-board-finished .result-message { min-height: 280px; gap: 10px; padding: 24px 16px; border-radius: 13px; }
+	.result-symbol { width: 40px; height: 40px; margin-bottom: 10px; font-size: 20px; }
+	.result-restart-button { margin-top: 16px; }
 }

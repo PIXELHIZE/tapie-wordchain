@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 const sqlPath = fileURLToPath(new URL("./korean_kr.sql", import.meta.url))
+const kkutuWordsPath = fileURLToPath(new URL("./kkutu_words.txt", import.meta.url))
+const kkutuExcludedWordsPath = fileURLToPath(new URL("./kkutu_excluded_words.txt", import.meta.url))
 const wordPattern = /\((\d+),\s*'((?:\\.|''|[^'\\])*)',\s*'((?:\\.|''|[^'\\])*)'\)/g
 const HANGUL_BASE = 0xac00
 const HANGUL_END = 0xd7a3
@@ -54,6 +56,12 @@ const loadWordIndex = () => {
   }
 
   const words = new Set([...nounWords].filter((word) => !northKoreanWords.has(word)))
+  const kkutuWords = readFileSync(kkutuWordsPath, "utf8")
+    .split(/\r?\n/u)
+    .filter((word) => word && !word.startsWith("#"))
+  for (const word of kkutuWords) words.add(word.normalize("NFC"))
+  const kkutuExcludedWords = readFileSync(kkutuExcludedWordsPath, "utf8").split(/\r?\n/u).filter(Boolean)
+  for (const word of kkutuExcludedWords) words.delete(word.normalize("NFC"))
   const index = new Map()
   for (const word of words) {
     const initial = word[0]
@@ -70,4 +78,3 @@ const dictionary = loadWordIndex()
 export const wordsByInitial = dictionary.index
 export const dictionaryWords = dictionary.words
 export const wordCount = dictionary.wordCount
-

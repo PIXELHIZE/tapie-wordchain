@@ -227,9 +227,10 @@ const App = () => {
             <div className="match-surface">
               <div className="players" aria-label="현재 차례">
                 {[0, 1].map((player) => (
-                  <div className={`player ${!isFinished && currentPlayer === player ? "player-active" : ""} ${isFinished && winner === player ? "player-winner" : ""}`} key={player}>
+                  <div className={`player ${!isFinished && currentPlayer === player ? "player-active" : ""} ${isFinished && winner === player ? "player-winner" : ""} ${isFinished && winner !== null && winner !== player ? "player-loser" : ""}`} key={player}>
                     <span className="player-index">0{player + 1}</span>
                     <span className="player-name">{player === 0 ? "나" : "테이피"}</span>
+                    {isFinished && winner !== null && <span className="player-result-badge">{winner === player ? "승자" : "패자"}</span>}
                     <span className="player-score">{words.filter((_, index) => index % 2 === player).length}</span>
                   </div>
                 ))}
@@ -257,9 +258,12 @@ const App = () => {
               {!isFinished && <div className="beat-lane" aria-hidden="true">{Array.from({ length: 12 }, (_, index) => <i key={index} />)}</div>}
               {isFinished ? (
                 <div className="result-message">
-                  <span className="result-label">{winner === null ? "경기 중단" : "승자"}</span>
+                  <span className="result-symbol" aria-hidden="true">{winner === null ? "!" : "★"}</span>
+                  <span className="result-label">{winner === null ? "경기 중단" : "WINNER · 승자"}</span>
                   <strong>{winner === null ? "확인 필요" : winner === 1 ? "테이피" : "나"}</strong>
+                  {winner !== null && <span className="result-loser">패자 · {winner === 1 ? "나" : "테이피"}</span>}
                   <span className="result-caption">{error || "기권으로 게임이 종료됐어요."}</span>
+                  <button className="result-restart-button" type="button" onClick={restartGame}>새 게임 시작 <span aria-hidden="true">↗</span></button>
                 </div>
               ) : (
                 <div className="prompt-content">
