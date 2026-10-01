@@ -1,135 +1,189 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import test from "node:test"
-import { gameReducer, getTurnDurationMs, initialGame, type GameState } from "../src/utils/Game.ts"
-import { getAllowedInitials, isValidWord } from "../src/utils/WordChain.ts"
+import { getTurnDurationMs, getWordPoints, type GameSnapshot } from "../shared/game.ts"
+import { isValidWord } from "../shared/rules.ts"
+import { createApi, type Env } from "../worker/api.ts"
+import { createWordEngine } from "../worker/engine.ts"
 
-const start = (mode: "deathmatch" | "timeAttack" = "timeAttack") =>
-  gameReducer(initialGame, { type: "start", mode, now: 0 })
-const action = (game: GameState, now: number) => ({ session: game.session, turn: game.words.length, now })
-const humanWord = (game: GameState, word: string, now: number) => {
-  const pending = gameReducer(game, { type: "validate", ...action(game, now) })
-  return gameReducer(pending, { type: "validated", ...action(pending, now + 100), word })
+const fixtureWords = ["사과", "과쁨", "과일", "일기", "기차", "차표", "표사", "기쁨"]
+const engine = createWordEngine(fixtureWords, () => 0)
+const migration = readFileSync(new URL("../migrations/0001_game_rankings.sql", import.meta.url), "utf8")
+
+const harness = () => {
+  const sqlite = new DatabaseSync(":memory:")
+  sqlite.exec(migration)
+  const prepare = (sql: string, params: SQLInputValue[] = []) => ({
+    bind: (...values: SQLInputValue[]) => prepare(sql, values),
+    first: async () => sqlite.prepare(sql).get(...params) ?? null,
+    all: async () => ({ results: sqlite.prepare(sql).all(...params) }),
+    run: async () => ({ meta: { changes: Number(sqlite.prepare(sql).run(...params).changes) } }),
+  })
+  const env = { DB: { prepare } as unknown as D1Database, ASSETS: { fetch: async () => new Response("asset") } as unknown as Fetcher } satisfies Env
+  let clock = 0
+  const api = createApi(engine, () => clock)
+  const send = async (path: string, body?: unknown) => {
+    const response = await api(new Request(`https://game.test/api/${path}`, {
+      method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }), env)
+    return { status: response.status, body: await response.json() as { game: GameSnapshot; error: string; entry: { rank: number; nickname: string; score: number }; rankings: { rank: number; nickname: string; score: number }[] } }
+  }
+  return { sqlite, api, env, send, time: (value: number) => { clock = value } }
 }
 
-test("time attack starts at 15 seconds and shortens every five complete rounds", () => {
-  for (const [round, seconds] of [[1, 15], [5, 15], [6, 13], [11, 11], [16, 9], [21, 7], [26, 5], [31, 3], [100, 3]]) {
-    const count = (round - 1) * 2
-    assert.equal(getTurnDurationMs(count), seconds * 1000)
-    assert.equal(getTurnDurationMs(count + 1), seconds * 1000)
-  }
-})
+const start = async (app: ReturnType<typeof harness>) => (await app.send("games", {})).body.game
+const move = (app: ReturnType<typeof harness>, game: GameSnapshot, word = "사과") => app.send(`games/${game.id}/words`, { word, revision: game.revision })
 
-test("both players get the current round's full limit on every accepted turn", () => {
-  let game = start()
-  assert.equal(game.deadline, 15000)
-  for (let turn = 0; turn < 80; turn++) {
-    const now = turn * 1000 + 10
-    game = turn % 2 === 0 ? humanWord(game, `사과${turn}`, now) :
-      gameReducer(game, { type: "computer-word", ...action(game, now), word: `과일${turn}` })
-    assert.equal(game.words.length, turn + 1)
-    assert.equal(game.result, null)
-    assert.equal(game.deadline, now + (turn % 2 === 0 ? 100 : 0) + getTurnDurationMs(turn + 1))
-  }
+test("time gets shorter every two rounds, reaching three seconds at round eleven", () => {
+  for (const [completed, ms] of [[0, 12000], [1, 12000], [2, 10000], [4, 8000], [6, 6000], [8, 4000], [10, 3000], [100, 3000]]) assert.equal(getTurnDurationMs(completed), ms)
 })
-
-test("deathmatch has no deadline, including after a dictionary rejection", () => {
-  let game = start("deathmatch")
-  game = gameReducer(game, { type: "validate", ...action(game, 100000) })
-  game = gameReducer(game, { type: "validated", ...action(game, 200000), word: "사과", error: "실패" })
-  assert.equal(game.deadline, null)
-  game = humanWord(game, "사과", 300000)
-  assert.equal(game.deadline, null)
-  assert.equal(game.words.length, 1)
+test("points combine normalized word length and whole seconds remaining", () => {
+  assert.deepEqual(getWordPoints("사과", 11500), { lengthPoints: 20, timePoints: 55, total: 75 })
+  assert.equal(getWordPoints("사과".normalize("NFD"), 11500).total, 75)
+  assert.equal(getWordPoints("끝말잇기", 8000).total, 80)
+  assert.equal(getWordPoints("사과", -100).timePoints, 0)
 })
-
-test("a timely submission can finish validating after its original deadline", () => {
-  let game = start()
-  game = gameReducer(game, { type: "validate", ...action(game, 14999) })
-  assert.equal(game.pending?.remainingMs, 1)
-  assert.equal(game.deadline, null)
-  assert.equal(gameReducer(game, { type: "timeout", ...action(game, 20000) }), game)
-  game = gameReducer(game, { type: "validated", ...action(game, 20000), word: "사과" })
-  assert.deepEqual(game.words, ["사과"])
-  assert.equal(game.result, null)
-  assert.equal(game.deadline, 35000)
+test("one-shot words and duplicate-exhausted replies are rejected", () => {
+  assert.match((engine.evaluateMove(undefined, "기쁨", []) as { error: string }).error, /한방/)
+  assert.match((engine.evaluateMove(undefined, "사과", ["과일"]) as { error: string }).error, /한방/)
 })
-
-test("a rejected submission resumes the saved time without giving extra thinking time", () => {
-  let game = start()
-  game = gameReducer(game, { type: "validate", ...action(game, 14000) })
-  game = gameReducer(game, { type: "validated", ...action(game, 20000), word: "가나다", error: "사전에 없음" })
-  assert.equal(game.deadline, 21000)
-  assert.equal(game.pending, null)
-  assert.equal(game.error, "사전에 없음")
-  assert.deepEqual(game.words, [])
+test("the bot also avoids dead-end words and makes a legal, unused reply", () => {
+  assert.deepEqual(engine.evaluateMove(undefined, "사과", []), { botWord: "과일" })
+  assert.deepEqual(engine.evaluateMove("과일", "일기", ["사과", "과일"]), { botWord: "기차" })
 })
-
-test("a submission at or after the deadline loses without starting validation", () => {
-  for (const now of [15000, 15001]) {
-    const game = start()
-    const finished = gameReducer(game, { type: "validate", ...action(game, now) })
-    assert.equal(finished.result?.winner, 1)
-    assert.equal(finished.pending, null)
-    assert.deepEqual(finished.words, [])
-  }
-})
-
-test("a late computer response loses even if the timer callback has not run", () => {
-  let game = humanWord(start(), "사과", 1000)
-  const deadline = game.deadline!
-  game = gameReducer(game, { type: "computer-word", ...action(game, deadline), word: "과일" })
-  assert.equal(game.result?.winner, 0)
-  assert.deepEqual(game.words, ["사과"])
-})
-
-test("timeout callbacks cannot finish the wrong turn or fire early", () => {
-  const original = start()
-  const next = humanWord(original, "사과", 100)
-  assert.equal(gameReducer(next, { type: "timeout", ...action(original, 16000) }), next)
-  assert.equal(gameReducer(next, { type: "timeout", ...action(next, 1000) }), next)
-  assert.equal(gameReducer(next, { type: "timeout", ...action(next, next.deadline!) }).result?.winner, 0)
-})
-
-test("forfeit during validation prevents a late valid response from changing the result", () => {
-  const game = gameReducer(start(), { type: "validate", ...action(start(), 100) })
-  const finished = gameReducer(game, { type: "finish", ...action(game, 200), result: { winner: 1, message: "기권" } })
-  assert.equal(gameReducer(finished, { type: "validated", ...action(game, 300), word: "사과" }), finished)
-})
-
-test("a computer response after forfeit cannot add another word", () => {
-  const game = humanWord(start(), "사과", 100)
-  const finished = gameReducer(game, { type: "finish", ...action(game, 200), result: { winner: 1, message: "기권" } })
-  assert.equal(gameReducer(finished, { type: "computer-word", ...action(game, 300), word: "과일" }), finished)
-})
-
-test("restart and home invalidate replies from the previous session", () => {
-  const pending = gameReducer(start(), { type: "validate", ...action(start(), 100) })
-  for (const next of [gameReducer(pending, { type: "start", mode: "timeAttack", now: 1000 }), gameReducer(pending, { type: "home" })]) {
-    assert.notEqual(next.session, pending.session)
-    assert.deepEqual(next.words, [])
-    assert.equal(gameReducer(next, { type: "validated", ...action(pending, 1100), word: "사과" }), next)
-  }
-})
-
-test("duplicate validation and completed replies are ignored", () => {
-  const game = start()
-  const pending = gameReducer(game, { type: "validate", ...action(game, 100) })
-  assert.equal(gameReducer(pending, { type: "validate", ...action(pending, 200) }), pending)
-  const next = gameReducer(pending, { type: "validated", ...action(pending, 300), word: "사과" })
-  assert.equal(gameReducer(next, { type: "validated", ...action(pending, 400), word: "사과" }), next)
-})
-
-test("word validation rejects non-Korean, short, duplicate and broken-chain words", () => {
+test("the existing dictionary syntax and duplicate rules stay in force", () => {
+  assert.ok(isValidWord(undefined, "a", []))
   assert.ok(isValidWord(undefined, "가", []))
-  assert.ok(isValidWord(undefined, "apple", []))
   assert.ok(isValidWord("사과", "사과", ["사과"]))
-  assert.ok(isValidWord("사과", "바나나", ["사과"]))
-  assert.equal(isValidWord("사과", "과일", ["사과"]), null)
+  assert.ok(isValidWord("사과", "바나나", []))
+  assert.equal(isValidWord("소녀", "여행".normalize("NFD"), []), null)
 })
-
-test("word validation normalizes decomposed Hangul and preserves allowed initials", () => {
-  assert.equal(isValidWord("사과", "과일".normalize("NFD"), ["사과"]), null)
-  assert.ok(isValidWord(undefined, "사과".normalize("NFD"), ["사과"]))
-  assert.deepEqual(getAllowedInitials("녀"), ["녀", "여"])
-  assert.equal(isValidWord("소녀", "여행", ["소녀"]), null)
+test("start returns a server-owned session with a twelve second deadline", async () => {
+  const app = harness()
+  const response = await app.send("games", {})
+  assert.equal(response.status, 201)
+  assert.equal(response.body.game.status, "active")
+  assert.equal(response.body.game.remainingMs, 12000)
+  assert.equal(response.body.game.score, 0)
+  assert.match(response.body.game.id, /^[a-f0-9-]{36}$/)
+})
+test("one accepted word adds a bot reply and server-calculated live points", async () => {
+  const app = harness(); const game = await start(app)
+  app.time(1000)
+  const response = await move(app, game)
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body.game.words, ["사과", "과일"])
+  assert.equal(response.body.game.score, 75)
+  assert.equal(response.body.game.lastGain, 75)
+  assert.equal(response.body.game.revision, 1)
+  assert.equal(response.body.game.remainingMs, 12000)
+  app.time(3000)
+  const next = await move(app, response.body.game, "일기")
+  assert.equal(next.body.game.score, 145)
+  assert.equal(next.body.game.turnDurationMs, 10000)
+})
+test("invalid and one-shot input never adds points or resets the deadline", async () => {
+  const app = harness(); const game = await start(app)
+  app.time(4000)
+  for (const word of ["기쁨", "없는말", "a"]) {
+    const response = await move(app, game, word)
+    assert.equal(response.status, 422)
+    assert.equal(response.body.game.score, 0)
+    assert.equal(response.body.game.remainingMs, 8000)
+    assert.deepEqual(response.body.game.words, [])
+  }
+})
+test("replayed and simultaneous move requests only count once", async () => {
+  const app = harness(); const game = await start(app)
+  app.time(1000)
+  const responses = await Promise.all([move(app, game), move(app, game)])
+  assert.deepEqual(responses.map((item) => item.status).sort(), [200, 409])
+  const saved = (await app.send(`games/${game.id}`)).body.game
+  assert.equal(saved.score, 75)
+  assert.equal(saved.words.length, 2)
+  assert.equal((await move(app, game)).status, 409)
+})
+test("late moves lose without appending words or points", async () => {
+  const app = harness(); const game = await start(app)
+  app.time(12000)
+  const response = await move(app, game)
+  assert.equal(response.status, 409)
+  assert.equal(response.body.game.status, "finished")
+  assert.equal(response.body.game.reason, "timeout")
+  assert.equal(response.body.game.score, 0)
+})
+test("a client cannot force an early timeout or register a still-active game", async () => {
+  const app = harness(); const game = await start(app)
+  const played = (await move(app, game)).body.game
+  const response = await app.send(`games/${game.id}/finish`, { reason: "timeout" })
+  assert.equal(response.body.game.status, "active")
+  assert.equal((await app.send(`games/${game.id}/ranking`, { nickname: "테스트", score: played.score })).status, 409)
+})
+test("forfeit keeps the earned points but subsequent moves are rejected", async () => {
+  const app = harness(); const game = (await move(app, await start(app))).body.game
+  const finished = (await app.send(`games/${game.id}/finish`, { reason: "forfeit" })).body.game
+  assert.equal(finished.status, "finished")
+  assert.equal(finished.reason, "forfeit")
+  assert.equal(finished.score, 80)
+  assert.equal((await move(app, game, "일기")).status, 409)
+})
+test("ranking ignores client scores and uses only the finished session's score", async () => {
+  const app = harness(); let game = await start(app); app.time(1000)
+  game = (await move(app, game)).body.game
+  await app.send(`games/${game.id}/finish`, { reason: "forfeit" })
+  const response = await app.send(`games/${game.id}/ranking`, { nickname: "테스트", score: 999999, words: ["가짜"] })
+  assert.equal(response.status, 200)
+  assert.equal(response.body.entry.score, 75)
+  assert.equal(response.body.entry.rank, 1)
+  assert.equal(response.body.rankings[0].score, 75)
+})
+test("registration is idempotent and cannot rename a completed record", async () => {
+  const app = harness(); const game = (await move(app, await start(app))).body.game
+  await app.send(`games/${game.id}/finish`, { reason: "forfeit" })
+  await app.send(`games/${game.id}/ranking`, { nickname: "첫이름" })
+  const again = await app.send(`games/${game.id}/ranking`, { nickname: "새이름" })
+  assert.equal(again.body.entry.nickname, "첫이름")
+  assert.equal(again.body.rankings.length, 1)
+  assert.equal((await app.send(`games/${game.id}`)).body.game.ranked, true)
+})
+test("same-score records use registration time to break ties", async () => {
+  const app = harness()
+  for (const [offset, nickname] of [[0, "먼저"], [10000, "나중"]] as const) {
+    app.time(offset); const game = await start(app)
+    app.time(offset + 1000); await move(app, game)
+    await app.send(`games/${game.id}/finish`, { reason: "forfeit" })
+    await app.send(`games/${game.id}/ranking`, { nickname })
+  }
+  const list = (await app.send("rankings")).body.rankings
+  assert.deepEqual(list.map((row) => row.nickname), ["먼저", "나중"])
+  assert.deepEqual(list.map((row) => row.score), [75, 75])
+})
+test("empty games and invalid nicknames cannot be ranked", async () => {
+  const app = harness(); const empty = await start(app)
+  await app.send(`games/${empty.id}/finish`, { reason: "forfeit" })
+  assert.equal((await app.send(`games/${empty.id}/ranking`, { nickname: "이름" })).status, 409)
+  const played = (await move(app, await start(app))).body.game
+  await app.send(`games/${played.id}/finish`, { reason: "forfeit" })
+  for (const nickname of ["", "<script>", "너무긴닉네임이름입니다아아아아"]) assert.equal((await app.send(`games/${played.id}/ranking`, { nickname })).status, 400)
+})
+test("rankings include only twenty entries in score order", async () => {
+  const app = harness()
+  for (let i = 0; i < 25; i++) {
+    const id = crypto.randomUUID()
+    app.sqlite.prepare("INSERT INTO games (id, deadline, created_at, status, score) VALUES (?, 0, 0, 'finished', ?)").run(id, i + 1)
+    app.sqlite.prepare("INSERT INTO rankings VALUES (?, ?, ?, ?)").run(id, `이름${i}`, i + 1, i)
+  }
+  const response = await app.send("rankings")
+  assert.equal(response.body.rankings.length, 20)
+  assert.equal(response.body.rankings[0].score, 25)
+  assert.equal(response.body.rankings.at(-1)?.score, 6)
+})
+test("missing API paths return JSON and malformed requests are rejected", async () => {
+  const app = harness(); const game = await start(app)
+  assert.equal((await app.send("does-not-exist")).status, 404)
+  const malformed = await app.api(new Request(`https://game.test/api/games/${game.id}/words`, { method: "POST", body: "{" }), app.env)
+  assert.equal(malformed.status, 400)
+  assert.equal((await app.send(`games/${game.id}/finish`, { reason: "win" })).status, 400)
 })

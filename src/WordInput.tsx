@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 
+import { getWordPoints } from "../shared/game"
+
 type Props = {
   onSubmit: (word: string) => boolean | Promise<boolean>
   disabled: boolean
   error: string
+  remainingMs: number
+  onEdit: () => void
 }
 
-const WordInput = ({ onSubmit, disabled, error }: Props) => {
+const WordInput = ({ onSubmit, disabled, error, remainingMs, onEdit }: Props) => {
   const [text, setText] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -39,7 +43,8 @@ const WordInput = ({ onSubmit, disabled, error }: Props) => {
           <input
             ref={inputRef}
             value={text}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => { setText(event.target.value); onEdit() }}
+            maxLength={100}
             onCompositionStart={() => { composingRef.current = true }}
             onCompositionEnd={() => { composingRef.current = false }}
             onKeyDown={(event) => {
@@ -58,6 +63,7 @@ const WordInput = ({ onSubmit, disabled, error }: Props) => {
           <span>{isSubmitting ? "확인 중" : "잇기"}</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg>
         </button>
       </div>
+      {text.trim() && !error && <p className="point-preview">예상 +{getWordPoints(text.trim(), remainingMs).total}점 <span>글자 {getWordPoints(text.trim(), remainingMs).lengthPoints} + 시간 {getWordPoints(text.trim(), remainingMs).timePoints}</span></p>}
       {error && <p className="word-error" id="word-error" role="alert">{error}</p>}
     </form>
   )
