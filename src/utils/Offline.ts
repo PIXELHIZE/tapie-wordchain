@@ -2,6 +2,8 @@ import { createWordEngine, type WordEngine } from "../../worker/engine.ts"
 import { getTranscript, type LocalRun } from "../../shared/run.ts"
 import type { RankingEntry, RankingResult } from "../../shared/game.ts"
 import { synchronizeRecords, type SavedRecord, type QueueStore } from "./SyncQueue.ts"
+import { loadDictionary } from "./Dictionary.ts"
+import { normalizePhone } from "../../shared/contact.ts"
 
 const DICTIONARY_CACHE = "tapie-dictionary-v2"
 const RUN_KEY = "wordchain-run-v2"
@@ -59,13 +61,7 @@ const records: QueueStore = {
 export const loadLocalEngine = () => enginePromise ??= (async () => {
   let cache: Cache | undefined
   try { cache = await caches.open(DICTIONARY_CACHE) } catch { /* In-memory mode still works. */ }
-  let response = await cache?.match("/dictionary.json")
-  if (!response) {
-    response = await fetch("/dictionary.json", { signal: AbortSignal.timeout(30000) })
-    if (!response.ok) throw new Error("사전을 내려받지 못했어요. 처음 한 번은 연결이 필요해요.")
-    await cache?.put("/dictionary.json", response.clone())
-  }
-  const words: string[] = await response.json()
+  const words = await loadDictionary(() => fetch("/dictionary.json", { signal: AbortSignal.timeout(30000), cache: "no-cache" }), cache)
   return createWordEngine(words)
 })().catch((error) => { enginePromise = null; throw error })
 
@@ -91,14 +87,18 @@ export const refreshRankings = async () => {
 export const pendingRankings = async (): Promise<RankingEntry[]> => (await records.all()).filter((record) => !record.result && !record.error).map((record) => ({ rank: 0, nickname: record.nickname, score: record.score, createdAt: record.createdAt, pending: true }))
 export const registrationFor = async (id: string) => {
   const record = (await records.all()).find((record) => record.id === id)
+  if (record && !record.result && !record.phone) return null
   if (record?.error) throw new Error(record.error)
   return record ? record.result?.entry ?? { rank: 0, nickname: record.nickname, score: record.score, createdAt: record.createdAt, pending: true } : null
 }
-export const queueRanking = async (run: LocalRun, nicknameInput: string) => {
+export const queueRanking = async (run: LocalRun, nicknameInput: string, phoneInput: string) => {
   const nickname = nicknameInput.trim().normalize("NFC")
   if (!/^[가-힣a-zA-Z0-9_ ]{1,12}$/u.test(nickname)) throw new Error("닉네임은 한글·영문·숫자로 1~12자 입력해 주세요.")
+  const phone = normalizePhone(phoneInput)
+  if (!phone) throw new Error("전화번호를 확인해 주세요. 숫자 9~15자리를 입력해 주세요.")
   const existing = (await records.all()).find((record) => record.id === run.game.id)
-  if (!existing) await records.put({ id: run.game.id, nickname, transcript: getTranscript(run), score: run.game.score, createdAt: Date.now() })
+  if (!existing) await records.put({ id: run.game.id, nickname, phone, transcript: getTranscript(run), score: run.game.score, createdAt: Date.now() })
+  else if (!existing.result && (!existing.phone || existing.error)) await records.put({ ...existing, nickname, phone, error: undefined })
   try { localStorage.setItem("wordchain-nickname", nickname) } catch { /* Optional preference. */ }
   changed()
   void syncRankings()
@@ -109,7 +109,8 @@ export const syncRankings = () => {
   if (syncing) return syncing
   syncing = (async () => {
     connected = await synchronizeRecords(records, async (record) => {
-      const result = await fetchRanking("/api/local-ranking", { nickname: record.nickname, transcript: record.transcript }) as RankingResult
+      if (!record.phone) throw new RankingFailure("전화번호를 입력해 기록 등록을 완료해 주세요.", 400)
+      const result = await fetchRanking("/api/local-ranking", { nickname: record.nickname, phone: record.phone, transcript: record.transcript }) as RankingResult
       cacheRankings(result.rankings)
       return result
     }, (error) => error instanceof RankingFailure && error.status >= 400 && error.status < 500 ? error.message : undefined)

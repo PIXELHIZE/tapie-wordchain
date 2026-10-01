@@ -1,5 +1,6 @@
 import { getTurnDurationMs, getWordPoints, getWrongPenalty, type GameSnapshot, type RankingEntry } from "../shared/game.ts"
 import { replayTranscript } from "../shared/run.ts"
+import { normalizePhone } from "../shared/contact.ts"
 import type { WordEngine } from "./engine.ts"
 
 export type Env = { DB: D1Database; ASSETS: Fetcher }
@@ -30,12 +31,15 @@ export const createApi = (engine: WordEngine, now: () => number = Date.now) => {
     const { results } = await db.prepare("SELECT nickname, score, created_at FROM rankings ORDER BY score DESC, created_at ASC, game_id ASC LIMIT 20").all<RankRow>()
     return results.map((row, index) => ({ rank: index + 1, nickname: row.nickname, score: row.score, createdAt: row.created_at }))
   }
-  const register = async (db: D1Database, id: string, input: unknown) => {
+  const register = async (db: D1Database, id: string, input: unknown, phoneInput: unknown) => {
     const nickname = typeof input === "string" ? input.trim().normalize("NFC") : ""
     if (!/^[가-힣a-zA-Z0-9_ ]{1,12}$/u.test(nickname)) return json({ error: "닉네임은 한글·영문·숫자로 1~12자 입력해 주세요." }, 400)
-    await db.prepare("INSERT INTO rankings (game_id, nickname, score, created_at) SELECT id, ?, score, ? FROM games WHERE id = ? AND status = 'finished' AND score > 0 ON CONFLICT(game_id) DO NOTHING").bind(nickname, now(), id).run()
+    const phone = normalizePhone(phoneInput)
+    if (!phone) return json({ error: "전화번호를 확인해 주세요. 숫자 9~15자리를 입력해 주세요." }, 400)
+    await db.prepare("INSERT INTO rankings (game_id, nickname, score, created_at) SELECT id, ?, score, ? FROM games WHERE id = ? AND status = 'finished' ON CONFLICT(game_id) DO NOTHING").bind(nickname, now(), id).run()
     const row = await db.prepare("SELECT * FROM rankings WHERE game_id = ?").bind(id).first<RankRow>()
-    if (!row) return json({ error: "점수가 있는 종료 기록만 등록할 수 있어요." }, 409)
+    if (!row) return json({ error: "종료된 경기만 등록할 수 있어요." }, 409)
+    await db.prepare("INSERT INTO ranking_contacts (game_id, phone, created_at) VALUES (?, ?, ?) ON CONFLICT(game_id) DO NOTHING").bind(id, phone, now()).run()
     const count = await db.prepare("SELECT COUNT(*) AS total FROM rankings WHERE score > ? OR (score = ? AND (created_at < ? OR (created_at = ? AND game_id < ?)))").bind(row.score, row.score, row.created_at, row.created_at, row.game_id).first<{ total: number }>()
     return json({ entry: { rank: count!.total + 1, nickname: row.nickname, score: row.score, createdAt: row.created_at }, rankings: await rankings(db) })
   }
@@ -52,9 +56,8 @@ export const createApi = (engine: WordEngine, now: () => number = Date.now) => {
         let run
         try { run = replayTranscript(body.transcript, engine) } catch { return json({ error: "경기 기록을 확인해 주세요." }, 400) }
         const game = run.game
-        if (!game.score) return json({ error: "점수가 있는 기록만 등록할 수 있어요." }, 409)
         await env.DB.prepare("INSERT INTO games (id, words, score, revision, streak, mistakes, last_gain, deadline, status, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'finished', ?, ?) ON CONFLICT(id) DO NOTHING").bind(game.id, JSON.stringify(game.words), game.score, game.revision, game.streak, game.mistakes, game.lastGain, game.reason, receivedAt).run()
-        return register(env.DB, game.id, body.nickname)
+        return register(env.DB, game.id, body.nickname, body.phone)
       }
       if (request.method === "POST" && path === "/api/games") {
         const id = crypto.randomUUID()
@@ -101,8 +104,8 @@ export const createApi = (engine: WordEngine, now: () => number = Date.now) => {
       }
 
       if (match[2] === "ranking") {
-        if (game.status !== "finished" || !game.score) return json({ error: "한 단어 이상 이은 경기가 끝나야 등록할 수 있어요." }, 409)
-        return register(env.DB, game.id, body.nickname)
+        if (game.status !== "finished") return json({ error: "경기가 끝나야 등록할 수 있어요." }, 409)
+        return register(env.DB, game.id, body.nickname, body.phone)
       }
       return json({ error: "요청한 API를 찾을 수 없어요." }, 404)
     } catch (error) {

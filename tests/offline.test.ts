@@ -68,7 +68,7 @@ test("replaying on another engine yields the same bot replies and exact score", 
 })
 test("queued records survive a disconnection and sync once after reconnecting", async () => {
   const run = finishLocalRun(submitLocalWord(make(), "사과", 1000, engine).run, "forfeit", 100)
-  const record: SavedRecord = { id: run.game.id, nickname: "로컬", transcript: getTranscript(run), score: run.game.score, createdAt: 1 }
+  const record: SavedRecord = { id: run.game.id, nickname: "로컬", phone: "01000000000", transcript: getTranscript(run), score: run.game.score, createdAt: 1 }
   const data = new Map([[record.id, record]])
   const store = { all: async () => [...data.values()], put: async (value: SavedRecord) => { data.set(value.id, value) } }
   assert.equal(await synchronizeRecords(store, async () => { throw new TypeError("offline") }), false)
@@ -79,4 +79,5 @@ test("queued records survive a disconnection and sync once after reconnecting", 
   await synchronizeRecords(store, send)
   assert.equal(calls, 1)
   assert.equal(data.get(record.id)?.result?.entry.rank, 1)
+  assert.equal(data.get(record.id)?.phone, undefined)
 })

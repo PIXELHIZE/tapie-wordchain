@@ -9,7 +9,7 @@ import { createWordEngine } from "../worker/engine.ts"
 
 const fixtureWords = ["사과", "과쁨", "과일", "일기", "기차", "차표", "표사", "기쁨"]
 const engine = createWordEngine(fixtureWords, () => 0)
-const migration = ["0001_game_rankings.sql", "0002_scoring.sql"].map((file) => readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8")).join("\n")
+const migration = ["0001_game_rankings.sql", "0002_scoring.sql", "0003_registration_contacts.sql"].map((file) => readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8")).join("\n")
 
 const harness = () => {
   const sqlite = new DatabaseSync(":memory:")
@@ -24,6 +24,7 @@ const harness = () => {
   let clock = 0
   const api = createApi(engine, () => clock)
   const send = async (path: string, body?: unknown) => {
+    if (body && typeof body === "object" && "nickname" in body) body = { phone: "010-0000-0000", ...body }
     const response = await api(new Request(`https://game.test/api/${path}`, {
       method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -161,10 +162,10 @@ test("same-score records use registration time to break ties", async () => {
   assert.deepEqual(list.map((row) => row.nickname), ["먼저", "나중"])
   assert.deepEqual(list.map((row) => row.score), [130, 130])
 })
-test("empty games and invalid nicknames cannot be ranked", async () => {
+test("zero-score finished games can register but invalid nicknames are rejected", async () => {
   const app = harness(); const empty = await start(app)
   await app.send(`games/${empty.id}/finish`, { reason: "forfeit" })
-  assert.equal((await app.send(`games/${empty.id}/ranking`, { nickname: "이름" })).status, 409)
+  assert.equal((await app.send(`games/${empty.id}/ranking`, { nickname: "이름" })).status, 200)
   const played = (await move(app, await start(app))).body.game
   await app.send(`games/${played.id}/finish`, { reason: "forfeit" })
   for (const nickname of ["", "<script>", "너무긴닉네임이름입니다아아아아"]) assert.equal((await app.send(`games/${played.id}/ranking`, { nickname })).status, 400)
@@ -229,4 +230,40 @@ test("offline ranking rejects a forged timeout and invalid transcript", async ()
     assert.equal((await app.send("local-ranking", { nickname: "잘못된기록", transcript })).status, 400)
   }
   assert.equal((await app.send("rankings")).body.rankings.length, 0)
+})
+
+test("phone numbers are required, normalized, private, and immutable on replay", async () => {
+  const app = harness()
+  const game = (await move(app, await start(app))).body.game
+  await app.send(`games/${game.id}/finish`, { reason: "forfeit" })
+  for (const phone of [undefined, "", "123", "abc01012345678", "010<script>"]) {
+    assert.equal((await app.send(`games/${game.id}/ranking`, { nickname: "연락처검증", phone })).status, 400)
+  }
+  const response = await app.send(`games/${game.id}/ranking`, { nickname: "연락처검증", phone: "010-0000-0000" })
+  assert.equal(response.status, 200)
+  assert.equal(app.sqlite.prepare("SELECT phone FROM ranking_contacts WHERE game_id = ?").get(game.id)?.phone, "01000000000")
+  assert.equal(JSON.stringify(response.body).includes("01000000000"), false)
+  assert.equal(JSON.stringify((await app.send("rankings")).body).includes("phone"), false)
+  await app.send(`games/${game.id}/ranking`, { nickname: "다른이름", phone: "010-1111-1111" })
+  assert.equal(app.sqlite.prepare("SELECT phone FROM ranking_contacts WHERE game_id = ?").get(game.id)?.phone, "01000000000")
+})
+test("a zero-score offline finish can save a nickname and private contact", async () => {
+  const { createLocalRun, finishLocalRun, getTranscript } = await import("../shared/run.ts")
+  const app = harness()
+  const run = finishLocalRun(createLocalRun(crypto.randomUUID(), 0), "timeout", 12000)
+  const response = await app.send("local-ranking", { nickname: "첫참여", phone: "010-0000-0000", transcript: getTranscript(run) })
+  assert.equal(response.status, 200)
+  assert.equal(response.body.entry.score, 0)
+  assert.equal(app.sqlite.prepare("SELECT COUNT(*) AS count FROM ranking_contacts").get()?.count, 1)
+})
+
+test("the contact migration preserves existing ranking entries", () => {
+  const sqlite = new DatabaseSync(":memory:")
+  sqlite.exec(["0001_game_rankings.sql", "0002_scoring.sql"].map((file) => readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8")).join("\n"))
+  const id = crypto.randomUUID()
+  sqlite.prepare("INSERT INTO games (id, deadline, created_at, status, score) VALUES (?, 0, 0, 'finished', 120)").run(id)
+  sqlite.prepare("INSERT INTO rankings VALUES (?, '기존기록', 120, 1)").run(id)
+  sqlite.exec(readFileSync(new URL("../migrations/0003_registration_contacts.sql", import.meta.url), "utf8"))
+  assert.equal(sqlite.prepare("SELECT nickname FROM rankings WHERE game_id = ?").get(id)?.nickname, "기존기록")
+  assert.equal(sqlite.prepare("SELECT score FROM rankings WHERE game_id = ?").get(id)?.score, 120)
 })
